@@ -100,4 +100,18 @@ float get_y_texto(const Texto* t);
  */
 char get_anchor_texto(const Texto* t);
 
+/**
+ * @brief Define a cor de preenchimento do texto.
+ * @param t Ponteiro para o texto.
+ * @param cor Nova cor de preenchimento.
+ */
+void set_corPreenchimento_texto(Texto* t, const char* cor);
+
+/**
+ * @brief Define a cor da borda do texto.
+ * @param t Ponteiro para o texto.
+ * @param cor Nova cor da borda.
+ */
+void set_corBorda_texto(Texto* t, const char* cor);
+
 #endif

@@ -117,3 +117,19 @@ char get_anchor_texto(const Texto* t) {
   const TextoStruct* txt = (const TextoStruct*)t;
   return txt->anchor;
 }
+
+// Define a cor de preenchimento do texto
+void set_corPreenchimento_texto(Texto* t, const char* cor) {
+    if (!t || !cor) return;
+    TextoStruct* txt = (TextoStruct*)t;
+    strncpy(txt->corPreenchimento, cor, sizeof(txt->corPreenchimento)-1);
+    txt->corPreenchimento[sizeof(txt->corPreenchimento)-1] = '\0';
+}
+
+// Define a cor da borda do texto
+void set_corBorda_texto(Texto* t, const char* cor) {
+    if (!t || !cor) return;
+    TextoStruct* txt = (TextoStruct*)t;
+    strncpy(txt->corBorda, cor, sizeof(txt->corBorda)-1);
+    txt->corBorda[sizeof(txt->corBorda)-1] = '\0';
+}

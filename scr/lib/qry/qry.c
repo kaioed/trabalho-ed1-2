@@ -4,13 +4,13 @@
 #include <math.h>
 #include <stdbool.h>
 #include "qry.h"
-#include "../lib/geo/geo.h"
-#include "../lib/poligono/poligono.h"
-#include "../lib/lista/lista.h"
-#include "../lib/formas/circulo/circulo.h"
-#include "../lib/formas/retangulo/retangulo.h"
-#include "../lib/formas/linha/linha.h"
-#include "../lib/formas/texto/texto.h"
+#include "../geo/geo.h"
+#include "../poligono/poligono.h"
+#include "../lista/lista.h"
+#include "../formas/circulo/circulo.h"
+#include "../formas/retangulo/retangulo.h"
+#include "../formas/linha/linha.h"
+#include "../formas/texto/texto.h"
 
 typedef struct {
     int id_original;
@@ -360,11 +360,16 @@ FormaStruct *clonar_forma_struct(FormaStruct *original, float dx, float dy) {
     return wrapper;
 }
 
-void adicionar_retangulo_limite(Poligono poly, Lista lista_formas) {
+void adicionar_retangulo_limite(Poligono poly, Lista lista_formas, double bx, double by) {
     if (!poly || !lista_formas) return;
 
-    double xmin =  1e30, ymin =  1e30;
-    double xmax = -1e30, ymax = -1e30;
+    // Inicializa com a coordenada da bomba para garantir que ela esteja DENTRO da caixa
+    double xmin = bx, ymin = by;
+    double xmax = bx, ymax = by;
+    
+    // Se bx/by forem valores "dummy" (ex: -1, -1 para comando 'a'), 
+    // forçamos a reinicialização na primeira forma válida se necessário.
+    // Mas para o caso do comando 'p'/'d', isso garante que o observador não fique fora do mundo.
 
     for (Posic p = get_primeiro_lista(lista_formas); p; p = get_proximo_lista(lista_formas, p)) {
         FormaStruct* f = (FormaStruct*) get_valor_lista(lista_formas, p);
@@ -421,6 +426,9 @@ void adicionar_retangulo_limite(Poligono poly, Lista lista_formas) {
     double dx = (xmax - xmin) * 0.10;
     double dy = (ymax - ymin) * 0.10;
 
+    if (dx == 0) dx = 10;
+    if (dy == 0) dy = 10;
+
     xmin -= dx;  ymin -= dy;
     xmax += dx;  ymax += dy;
 
@@ -443,7 +451,7 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
 
         if (strcmp(cmd, "a") == 0) {
             Poligono anteparos = CriarPoligono(2000); 
-            adicionar_retangulo_limite(anteparos, lista_formas);
+           adicionar_retangulo_limite(anteparos, lista_formas, 0, 0);
 
             int id_i, id_f;
             char orientacao[5] = "v";
@@ -482,7 +490,7 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             }
 
             Poligono anteparos = CriarPoligono(2000);
-            adicionar_retangulo_limite(anteparos, lista_formas);
+           adicionar_retangulo_limite(anteparos, lista_formas, x, y);
             
             Posic pa = get_primeiro_lista(lista_formas);
             while(pa){

@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
 #include "lib/arg/args.h"
 #include "lib/geo/geo.h"
-#include "qry/qry.h"
+#include "lib/qry/qry.h"
 #include "lib/poligono/poligono.h"
 
 void remover_extensao(const char *nome_arquivo, char *buffer) {
@@ -24,6 +25,9 @@ void montar_caminho(const char *diretorio, const char *nome, char *buffer) {
 }
 
 int main(int argc, char *argv[]) {
+
+    setlocale(LC_NUMERIC, "C");
+    
     char *dir_base_entrada = obter_valor_opcao(argc, argv, "e");
     char *nome_arquivo_geo = obter_valor_opcao(argc, argv, "f");
     char *dir_base_saida   = obter_valor_opcao(argc, argv, "o");
@@ -108,7 +112,10 @@ int main(int argc, char *argv[]) {
             } else {
                 printf("Processando QRY: %s\n", caminho_qry);
                 
-                process_qry(f_qry, dir_base_saida, geo_sem_ext, ground, f_txt);
+                char nome_base_combinado[600];
+                sprintf(nome_base_combinado, "%s-%s", geo_sem_ext, qry_sem_ext);
+
+                process_qry(f_qry, dir_base_saida, nome_base_combinado, ground, f_txt);
 
                 fclose(f_txt);
             }

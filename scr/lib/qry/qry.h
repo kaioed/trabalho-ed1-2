@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <stdbool.h>
-#include "../lib/geo/geo.h"
+#include "../geo/geo.h"
 
 /**
  * @file qry.h
@@ -82,6 +82,6 @@ bool formas_colidem(void* f1, void* f2);
  * @param ground estrutura `Ground` retornada por `process_geo` com as formas carregadas
  * @param txt arquivo .txt para saída de mensagens/relatórios
  */
-void process_qry(FILE *qry, FILE *svg, Ground ground, FILE *txt);
+void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, Ground ground, FILE *txt);
 
 #endif
