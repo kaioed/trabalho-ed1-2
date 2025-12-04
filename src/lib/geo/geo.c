@@ -156,3 +156,82 @@ void destruir_ground(Ground g) {
 
     free(gr);
 }
+
+Ground process_geo(FILE *geo, FILE *svg) {
+  
+    Ground g = criar_ground(svg);
+    
+    char comando[10];
+    
+   
+    while (fscanf(geo, "%s", comando) != EOF) {
+        
+       
+        if (strcmp(comando, "c") == 0) {
+            int id;
+            float x, y, r;
+            char corB[32], corP[32];
+            
+            
+            fscanf(geo, "%d %f %f %f %s %s", &id, &x, &y, &r, corB, corP);
+            
+           
+            Circulo c = criar_circulo(x, y, r, corP, corB, id);
+            ground_inserir_forma(g, TIPO_CIRCULO, c, id);
+        }
+        
+      
+        else if (strcmp(comando, "r") == 0) {
+            int id;
+            float x, y, w, h;
+            char corB[32], corP[32];
+            
+           
+            fscanf(geo, "%d %f %f %f %f %s %s", &id, &x, &y, &w, &h, corB, corP);
+            
+            Retangulo ret = criar_retangulo(x, y, w, h, corP, corB, id);
+            ground_inserir_forma(g, TIPO_RETANGULO, ret, id);
+        }
+        
+        
+        else if (strcmp(comando, "l") == 0) {
+            int id;
+            float x1, y1, x2, y2;
+            char cor[32];
+            
+           
+            fscanf(geo, "%d %f %f %f %f %s", &id, &x1, &y1, &x2, &y2, cor);
+            
+            Linha l = criar_linha(x1, y1, x2, y2, cor, id);
+            ground_inserir_forma(g, TIPO_LINHA, l, id);
+        }
+        
+    
+        else if (strcmp(comando, "t") == 0) {
+            int id;
+            float x, y;
+            char corB[32], corP[32];
+            char ancora;
+            char conteudo[256];
+            
+           
+            fscanf(geo, "%d %f %f %s %s %c", &id, &x, &y, corB, corP, &ancora);
+            
+           
+            fgets(conteudo, 256, geo);
+          
+            size_t len = strlen(conteudo);
+            if (len > 0 && conteudo[len-1] == '\n') conteudo[len-1] = '\0';
+            Texto t = criar_texto(x, y, corB, corP, ancora, conteudo, "sans-serif", id);
+            
+            ground_inserir_forma(g, TIPO_TEXTO, t, id);
+        }
+    }
+
+    if (svg) {
+       fprintf(svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
+        ground_escrever_svg(g);
+    }
+
+    return g;
+}
