@@ -248,7 +248,6 @@ void transformar_forma_em_segmentos(Poligono poly, FormaStruct *f, char orientac
         case TIPO_LINHA: {
             Linha l = (Linha)f->dados_forma;
             adicionar_segmento_no_poligono(poly, get_x1_linha(l), get_y1_linha(l), get_x2_linha(l), get_y2_linha(l));
-            if (txt) fprintf(txt, "Anteparo Linha ID:%d\n", f->id_original);
             break;
         }
         case TIPO_RETANGULO: {
@@ -262,8 +261,6 @@ void transformar_forma_em_segmentos(Poligono poly, FormaStruct *f, char orientac
             adicionar_segmento_no_poligono(poly, x+w, y, x+w, y+h);
             adicionar_segmento_no_poligono(poly, x+w, y+h, x, y+h);
             adicionar_segmento_no_poligono(poly, x, y+h, x, y);
-            
-            if (txt) fprintf(txt, "Anteparo Retangulo ID:%d\n", f->id_original);
             break;
         }
         case TIPO_CIRCULO: {
@@ -277,7 +274,6 @@ void transformar_forma_em_segmentos(Poligono poly, FormaStruct *f, char orientac
             } else {
                 adicionar_segmento_no_poligono(poly, x, y - r, x, y + r);
             }
-            if (txt) fprintf(txt, "Anteparo Circulo ID:%d (%c)\n", f->id_original, orientacao);
             break;
         }
         case TIPO_TEXTO: {
@@ -294,7 +290,6 @@ void transformar_forma_em_segmentos(Poligono poly, FormaStruct *f, char orientac
             else { x1 = x - tamanho/2; x2 = x + tamanho/2; }
 
             adicionar_segmento_no_poligono(poly, x1, y, x2, y);
-            if (txt) fprintf(txt, "Anteparo Texto ID:%d\n", f->id_original);
             break;
         }
     }
@@ -363,14 +358,10 @@ FormaStruct *clonar_forma_struct(FormaStruct *original, float dx, float dy) {
 void adicionar_retangulo_limite(Poligono poly, Lista lista_formas, double bx, double by) {
     if (!poly || !lista_formas) return;
 
-    // Inicializa com a coordenada da bomba para garantir que ela esteja DENTRO da caixa
+   
     double xmin = bx, ymin = by;
     double xmax = bx, ymax = by;
     
-    // Se bx/by forem valores "dummy" (ex: -1, -1 para comando 'a'), 
-    // forçamos a reinicialização na primeira forma válida se necessário.
-    // Mas para o caso do comando 'p'/'d', isso garante que o observador não fique fora do mundo.
-
     for (Posic p = get_primeiro_lista(lista_formas); p; p = get_proximo_lista(lista_formas, p)) {
         FormaStruct* f = (FormaStruct*) get_valor_lista(lista_formas, p);
         if (!f || f->foi_destruida) continue;
@@ -450,35 +441,101 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
         if (sscanf(linha, "%s", cmd) != 1) continue;
 
         if (strcmp(cmd, "a") == 0) {
-            Poligono anteparos = CriarPoligono(2000); 
-           adicionar_retangulo_limite(anteparos, lista_formas, 0, 0);
-
             int id_i, id_f;
             char orientacao[5] = "v";
             
             char *args = strstr(linha, "a");
             args += 1;
-            int lidos = sscanf(args, "%d %d %s", &id_i, &id_f, orientacao);
+            sscanf(args, "%d %d %s", &id_i, &id_f, orientacao);
             char or = (orientacao[0] == 'h' || orientacao[0] == 'H') ? 'h' : 'v';
+
+            Lista novos_anteparos = NULL;
+            iniciar_lista(&novos_anteparos);
 
             Posic p = get_primeiro_lista(lista_formas);
             while (p) {
                 FormaStruct* f = (FormaStruct*)get_valor_lista(lista_formas, p);
+                
                 if (!f->foi_destruida && f->id_original >= id_i && f->id_original <= id_f) {
-                    transformar_forma_em_segmentos(anteparos, f, or, txt);
+                    
+                    if (f->tipo == TIPO_CIRCULO || f->tipo == TIPO_RETANGULO || f->tipo == TIPO_TEXTO) {
+                        
+                        if (txt) fprintf(txt, "Transformado: %s ID %d\n", obter_nome_tipo(f->tipo), f->id_original);
+                        f->foi_destruida = true;
+
+                        double x1, y1, x2, y2;
+                        char cor[32];
+                        strcpy(cor, "#000000"); // Default
+
+                        if (f->tipo == TIPO_CIRCULO) {
+                            Circulo c = (Circulo)f->dados_forma;
+                            double x = get_x(c), y = get_y(c), r = get_raio(c);
+                            strcpy(cor, get_corBorda_circulo(c));
+                            if (or == 'h') { x1 = x - r; y1 = y; x2 = x + r; y2 = y; }
+                            else { x1 = x; y1 = y - r; x2 = x; y2 = y + r; }
+                        }
+                        else if (f->tipo == TIPO_RETANGULO) {
+                            Retangulo r = (Retangulo)f->dados_forma;
+                            double x = get_x_retangulo(r), y = get_y_retangulo(r);
+                            double w = get_largura(r), h = get_altura(r);
+                            double cx = x + w/2.0, cy = y + h/2.0;
+                            strcpy(cor, get_corBorda_retangulo(r));
+                            
+                            if (w >= h) { // Maior lateral horizontal
+                                x1 = x; y1 = cy; x2 = x + w; y2 = cy;
+                            } else { // Maior lateral vertical
+                                x1 = cx; y1 = y; x2 = cx; y2 = y + h;
+                            }
+                        }
+                        else if (f->tipo == TIPO_TEXTO) {
+                            Texto t = (Texto)f->dados_forma;
+                            double x = get_x_texto(t), y = get_y_texto(t);
+                            char anchor = get_anchor_texto(t);
+                            const char* cont = get_conteudo_texto(t);
+                            double tamanho = 10.0 * (cont ? strlen(cont) : 0);
+                            strcpy(cor, get_corBorda_texto(t));
+
+                            y1 = y; y2 = y;
+                            if (anchor == 'i') { x1 = x; x2 = x + tamanho; }
+                            else if (anchor == 'f') { x1 = x - tamanho; x2 = x; }
+                            else { x1 = x - tamanho/2.0; x2 = x + tamanho/2.0; }
+                        }
+
+                        int novo_id = proximo_id_clone++; 
+                        
+                        Linha nova_linha = criar_linha(x1, y1, x2, y2, cor, novo_id);
+                        
+                        FormaStruct* fw = malloc(sizeof(FormaStruct));
+                        fw->id_original = novo_id;
+                        fw->tipo = TIPO_LINHA;
+                        fw->dados_forma = nova_linha;
+                        fw->foi_destruida = false;
+                        fw->foi_clonada = false;
+                        fw->x_centro = (x1+x2)/2;
+                        fw->y_centro = (y1+y2)/2;
+
+                        inserir_lista(&novos_anteparos, fw);
+
+                        if (txt) fprintf(txt, "Novo Segmento: ID %d (%.2f, %.2f) -> (%.2f, %.2f)\n", novo_id, x1, y1, x2, y2);
+                    }
                 }
                 p = get_proximo_lista(lista_formas, p);
             }
-            DestruirPoligono(anteparos);
+            
+            void* val;
+            while(remover_inicio_lista(&novos_anteparos, &val)) {
+                inserir_fim_lista(&lista_formas, val);
+            }
+            free(novos_anteparos);
         }
 
         else if (strcmp(cmd, "d") == 0 || strcmp(cmd, "p") == 0 || strcmp(cmd, "cln") == 0) {
             double x, y;
             char sfx[32] = "-";
             char cor[32] = "yellow";
+            double dx = 0, dy = 0;
             
             char *args = strstr(linha, cmd) + strlen(cmd);
-            double dx = 0, dy = 0;
 
             if (strcmp(cmd, "d") == 0) {
                  sscanf(args, "%lf %lf %s", &x, &y, sfx);
@@ -490,7 +547,7 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             }
 
             Poligono anteparos = CriarPoligono(2000);
-           adicionar_retangulo_limite(anteparos, lista_formas, x, y);
+            adicionar_retangulo_limite(anteparos, lista_formas, x, y);
             
             Posic pa = get_primeiro_lista(lista_formas);
             while(pa){
@@ -507,7 +564,7 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             FILE* svg_cmd = fopen(nome_arquivo_svg, "w");
             
             if (svg_cmd) {
-                fprintf(svg_cmd, "<svg xmlns='http://www.w3.org/2000/svg'>\n");
+               fprintf(svg_cmd, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
                 desenhar_cenario_atual(svg_cmd, lista_formas);
                 desenhar_visibilidade_svg(svg_cmd, vis, x, y, (strcmp(cmd, "p")==0 ? cor : (strcmp(cmd,"cln")==0 ? "blue" : "yellow")));
                 fprintf(svg_cmd, "</svg>");
@@ -559,8 +616,8 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             if (novos_clones) {
                 void* val;
                 while(remover_inicio_lista(&novos_clones, &val)) {
-                    inserir_fim_lista(lista_formas, val); 
-                    inserir_fim_lista(lista_clones, val); 
+                    inserir_fim_lista(&lista_formas, val); 
+                    inserir_fim_lista(&lista_clones, val); 
                 }
                 free(novos_clones);
             }

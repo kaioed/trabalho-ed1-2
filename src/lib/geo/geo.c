@@ -87,7 +87,7 @@ void* criar_forma_wrapper(TipoForma tipo, void* forma, int id) {
 
 void ground_inserir_forma(Ground g, TipoForma tipo, void* forma, int id) {
     FormaStruct* f = criar_forma_wrapper(tipo, forma, id);
-    inserir_fim_lista(((GroundStruct*)g)->formas, f);
+    inserir_fim_lista(&((GroundStruct*)g)->formas, f);
 }
 
 void escrever_svg_forma(FILE* svg, FormaStruct* f) {
@@ -122,10 +122,19 @@ void escrever_svg_forma(FILE* svg, FormaStruct* f) {
 
         case TIPO_TEXTO: {
             Texto t = (Texto)f->dados_forma;
+            
+            // CORREÇÃO: Tratamento da âncora (text-anchor)
+            char anchor_svg[10] = "start";
+            char a = get_anchor_texto(t);
+            if (a == 'm') strcpy(anchor_svg, "middle");
+            else if (a == 'f') strcpy(anchor_svg, "end");
+
             fprintf(svg,
-                "<text x=\"%f\" y=\"%f\" fill=\"%s\">%s</text>\n",
+                "<text x=\"%f\" y=\"%f\" fill=\"%s\" stroke=\"%s\" text-anchor=\"%s\">%s</text>\n",
                 get_x_texto(t), get_y_texto(t),
-                get_corBorda_texto(t),
+                get_corPreenchimento_texto(t), // Fill é o preenchimento
+                get_corBorda_texto(t),         // Stroke é a borda
+                anchor_svg,
                 get_conteudo_texto(t));
         } break;
     }
@@ -146,67 +155,57 @@ void ground_escrever_svg(Ground g) {
 
 void destruir_ground(Ground g) {
     GroundStruct* gr = (GroundStruct*)g;
-
     void* val;
-    while (remover_inicio_lista(&gr->formas, &val))
-        free(val);
 
-    while (remover_inicio_lista(&gr->clones, &val))
+    while (remover_inicio_lista(&gr->formas, &val)) {
         free(val);
+    }
+
+    while (remover_inicio_lista(&gr->clones, &val)) {
+       // Não libera o valor (wrapper) aqui pois é o mesmo ponteiro da lista formas
+    }
+
+    liberar_lista(&gr->formas);
+    liberar_lista(&gr->clones);
 
     free(gr);
 }
 
 Ground process_geo(FILE *geo, FILE *svg) {
-  
     Ground g = criar_ground(svg);
-    
     char comando[10];
     
-   
     while (fscanf(geo, "%s", comando) != EOF) {
-        
-       
         if (strcmp(comando, "c") == 0) {
             int id;
             float x, y, r;
             char corB[32], corP[32];
             
-            
             fscanf(geo, "%d %f %f %f %s %s", &id, &x, &y, &r, corB, corP);
             
-           
             Circulo c = criar_circulo(x, y, r, corP, corB, id);
             ground_inserir_forma(g, TIPO_CIRCULO, c, id);
         }
-        
-      
         else if (strcmp(comando, "r") == 0) {
             int id;
             float x, y, w, h;
             char corB[32], corP[32];
             
-           
             fscanf(geo, "%d %f %f %f %f %s %s", &id, &x, &y, &w, &h, corB, corP);
             
             Retangulo ret = criar_retangulo(x, y, w, h, corP, corB, id);
             ground_inserir_forma(g, TIPO_RETANGULO, ret, id);
         }
-        
-        
         else if (strcmp(comando, "l") == 0) {
             int id;
             float x1, y1, x2, y2;
             char cor[32];
             
-           
             fscanf(geo, "%d %f %f %f %f %s", &id, &x1, &y1, &x2, &y2, cor);
             
             Linha l = criar_linha(x1, y1, x2, y2, cor, id);
             ground_inserir_forma(g, TIPO_LINHA, l, id);
         }
-        
-    
         else if (strcmp(comando, "t") == 0) {
             int id;
             float x, y;
@@ -214,23 +213,30 @@ Ground process_geo(FILE *geo, FILE *svg) {
             char ancora;
             char conteudo[256];
             
-           
+            // CORREÇÃO: Espaço antes de %c para ignorar whitespace anterior
             fscanf(geo, "%d %f %f %s %s %c", &id, &x, &y, corB, corP, &ancora);
             
-           
+            // Lê o resto da linha (o texto em si)
             fgets(conteudo, 256, geo);
-          
             size_t len = strlen(conteudo);
             if (len > 0 && conteudo[len-1] == '\n') conteudo[len-1] = '\0';
-            Texto t = criar_texto(x, y, corB, corP, ancora, conteudo, "sans-serif", id);
             
+            // Remove carriage return se existir (Windows/WSL)
+            if (len > 1 && conteudo[len-2] == '\r') conteudo[len-2] = '\0';
+
+            Texto t = criar_texto(x, y, corB, corP, ancora, conteudo, "sans-serif", id);
             ground_inserir_forma(g, TIPO_TEXTO, t, id);
+        }
+        else if (strcmp(comando, "ts") == 0) {
+            char buffer[256];
+            fgets(buffer, 256, geo);
         }
     }
 
     if (svg) {
-       fprintf(svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
+        fprintf(svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
         ground_escrever_svg(g);
+        fprintf(svg, "</svg>\n");
     }
 
     return g;
