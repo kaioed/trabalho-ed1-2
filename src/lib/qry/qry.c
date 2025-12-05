@@ -358,7 +358,6 @@ FormaStruct *clonar_forma_struct(FormaStruct *original, float dx, float dy) {
 void adicionar_retangulo_limite(Poligono poly, Lista lista_formas, double bx, double by) {
     if (!poly || !lista_formas) return;
 
-   
     double xmin = bx, ymin = by;
     double xmax = bx, ymax = by;
     
@@ -463,29 +462,47 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                         if (txt) fprintf(txt, "Transformado: %s ID %d\n", obter_nome_tipo(f->tipo), f->id_original);
                         f->foi_destruida = true;
 
-                        double x1, y1, x2, y2;
+                        double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
                         char cor[32];
-                        strcpy(cor, "#000000"); // Default
+                        strcpy(cor, "#000000"); 
 
-                        if (f->tipo == TIPO_CIRCULO) {
+                        bool gerou_multiplos = false;
+
+                        if (f->tipo == TIPO_RETANGULO) {
+                            Retangulo r = (Retangulo)f->dados_forma;
+                            double x = get_x_retangulo(r), y = get_y_retangulo(r);
+                            double w = get_largura(r), h = get_altura(r);
+                            strcpy(cor, get_corBorda_retangulo(r));
+                            
+                            double coords[4][4] = {
+                                {x, y, x + w, y},       
+                                {x + w, y, x + w, y + h}, 
+                                {x + w, y + h, x, y + h}, 
+                                {x, y + h, x, y}        
+                            };
+
+                            for(int k=0; k<4; k++) {
+                                int novo_id = proximo_id_clone++;
+                                Linha nl = criar_linha(coords[k][0], coords[k][1], coords[k][2], coords[k][3], cor, novo_id);
+                                FormaStruct* fw = malloc(sizeof(FormaStruct));
+                                fw->id_original = novo_id;
+                                fw->tipo = TIPO_LINHA;
+                                fw->dados_forma = nl;
+                                fw->foi_destruida = false;
+                                fw->foi_clonada = false;
+                                fw->x_centro = (coords[k][0]+coords[k][2])/2;
+                                fw->y_centro = (coords[k][1]+coords[k][3])/2;
+                                inserir_lista(&novos_anteparos, fw);
+                                if (txt) fprintf(txt, "Novo Segmento (Ret): ID %d (%.2f, %.2f) -> (%.2f, %.2f)\n", novo_id, coords[k][0], coords[k][1], coords[k][2], coords[k][3]);
+                            }
+                            gerou_multiplos = true;
+                        }
+                        else if (f->tipo == TIPO_CIRCULO) {
                             Circulo c = (Circulo)f->dados_forma;
                             double x = get_x(c), y = get_y(c), r = get_raio(c);
                             strcpy(cor, get_corBorda_circulo(c));
                             if (or == 'h') { x1 = x - r; y1 = y; x2 = x + r; y2 = y; }
                             else { x1 = x; y1 = y - r; x2 = x; y2 = y + r; }
-                        }
-                        else if (f->tipo == TIPO_RETANGULO) {
-                            Retangulo r = (Retangulo)f->dados_forma;
-                            double x = get_x_retangulo(r), y = get_y_retangulo(r);
-                            double w = get_largura(r), h = get_altura(r);
-                            double cx = x + w/2.0, cy = y + h/2.0;
-                            strcpy(cor, get_corBorda_retangulo(r));
-                            
-                            if (w >= h) { // Maior lateral horizontal
-                                x1 = x; y1 = cy; x2 = x + w; y2 = cy;
-                            } else { // Maior lateral vertical
-                                x1 = cx; y1 = y; x2 = cx; y2 = y + h;
-                            }
                         }
                         else if (f->tipo == TIPO_TEXTO) {
                             Texto t = (Texto)f->dados_forma;
@@ -494,29 +511,26 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                             const char* cont = get_conteudo_texto(t);
                             double tamanho = 10.0 * (cont ? strlen(cont) : 0);
                             strcpy(cor, get_corBorda_texto(t));
-
                             y1 = y; y2 = y;
                             if (anchor == 'i') { x1 = x; x2 = x + tamanho; }
                             else if (anchor == 'f') { x1 = x - tamanho; x2 = x; }
                             else { x1 = x - tamanho/2.0; x2 = x + tamanho/2.0; }
                         }
 
-                        int novo_id = proximo_id_clone++; 
-                        
-                        Linha nova_linha = criar_linha(x1, y1, x2, y2, cor, novo_id);
-                        
-                        FormaStruct* fw = malloc(sizeof(FormaStruct));
-                        fw->id_original = novo_id;
-                        fw->tipo = TIPO_LINHA;
-                        fw->dados_forma = nova_linha;
-                        fw->foi_destruida = false;
-                        fw->foi_clonada = false;
-                        fw->x_centro = (x1+x2)/2;
-                        fw->y_centro = (y1+y2)/2;
-
-                        inserir_lista(&novos_anteparos, fw);
-
-                        if (txt) fprintf(txt, "Novo Segmento: ID %d (%.2f, %.2f) -> (%.2f, %.2f)\n", novo_id, x1, y1, x2, y2);
+                        if (!gerou_multiplos) {
+                            int novo_id = proximo_id_clone++; 
+                            Linha nova_linha = criar_linha(x1, y1, x2, y2, cor, novo_id);
+                            FormaStruct* fw = malloc(sizeof(FormaStruct));
+                            fw->id_original = novo_id;
+                            fw->tipo = TIPO_LINHA;
+                            fw->dados_forma = nova_linha;
+                            fw->foi_destruida = false;
+                            fw->foi_clonada = false;
+                            fw->x_centro = (x1+x2)/2;
+                            fw->y_centro = (y1+y2)/2;
+                            inserir_lista(&novos_anteparos, fw);
+                            if (txt) fprintf(txt, "Novo Segmento: ID %d (%.2f, %.2f) -> (%.2f, %.2f)\n", novo_id, x1, y1, x2, y2);
+                        }
                     }
                 }
                 p = get_proximo_lista(lista_formas, p);

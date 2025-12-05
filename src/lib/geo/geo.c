@@ -123,7 +123,6 @@ void escrever_svg_forma(FILE* svg, FormaStruct* f) {
         case TIPO_TEXTO: {
             Texto t = (Texto)f->dados_forma;
             
-            // CORREÇÃO: Tratamento da âncora (text-anchor)
             char anchor_svg[10] = "start";
             char a = get_anchor_texto(t);
             if (a == 'm') strcpy(anchor_svg, "middle");
@@ -132,8 +131,8 @@ void escrever_svg_forma(FILE* svg, FormaStruct* f) {
             fprintf(svg,
                 "<text x=\"%f\" y=\"%f\" fill=\"%s\" stroke=\"%s\" text-anchor=\"%s\">%s</text>\n",
                 get_x_texto(t), get_y_texto(t),
-                get_corPreenchimento_texto(t), // Fill é o preenchimento
-                get_corBorda_texto(t),         // Stroke é a borda
+                get_corPreenchimento_texto(t), 
+                get_corBorda_texto(t),         
                 anchor_svg,
                 get_conteudo_texto(t));
         } break;
@@ -162,7 +161,7 @@ void destruir_ground(Ground g) {
     }
 
     while (remover_inicio_lista(&gr->clones, &val)) {
-       // Não libera o valor (wrapper) aqui pois é o mesmo ponteiro da lista formas
+       
     }
 
     liberar_lista(&gr->formas);
@@ -213,15 +212,12 @@ Ground process_geo(FILE *geo, FILE *svg) {
             char ancora;
             char conteudo[256];
             
-            // CORREÇÃO: Espaço antes de %c para ignorar whitespace anterior
             fscanf(geo, "%d %f %f %s %s %c", &id, &x, &y, corB, corP, &ancora);
             
-            // Lê o resto da linha (o texto em si)
             fgets(conteudo, 256, geo);
             size_t len = strlen(conteudo);
             if (len > 0 && conteudo[len-1] == '\n') conteudo[len-1] = '\0';
             
-            // Remove carriage return se existir (Windows/WSL)
             if (len > 1 && conteudo[len-2] == '\r') conteudo[len-2] = '\0';
 
             Texto t = criar_texto(x, y, corB, corP, ancora, conteudo, "sans-serif", id);

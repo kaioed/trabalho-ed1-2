@@ -1,4 +1,5 @@
 #include "poligono.h"
+#include "../arvore/tree.h" 
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
@@ -7,18 +8,14 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define INF 1e18
 #define TIPO_INICIO 0
 #define TIPO_FIM    1
 
 static int LIMIAR_INSERTION_SORT = 10;
 
 void definir_limiar_ordenacao(int limiar) {
-    if (limiar > 0) {
-        LIMIAR_INSERTION_SORT = limiar;
-    }
+    if (limiar > 0) LIMIAR_INSERTION_SORT = limiar;
 }
-
 
 typedef struct {
     double x, y;
@@ -38,24 +35,13 @@ typedef struct {
     int n, cap;
 } TVisibilidade;
 
-typedef struct NoAVL {
-    TSegmento seg;
-    double chave;
-    int h;
-    struct NoAVL *esq, *dir;
-} NoAVL;
-
-typedef struct {
-    NoAVL *raiz;
-} TSetAVL;
-
 typedef struct {
     TPonto v;
     double ang;
     int tipo; 
-    TSegmento seg;
+    TSegmento seg; 
+    double dist_key; 
 } EventoVarredura;
-
 
 static double dist2(TPonto a, TPonto b) {
     double dx = a.x - b.x;
@@ -63,91 +49,22 @@ static double dist2(TPonto a, TPonto b) {
     return dx*dx + dy*dy;
 }
 
-static int Intersec(TSegmento s1, TSegmento s2, TPonto *resp) {
-    double x1 = s1.a.x, y1 = s1.a.y;
-    double x2 = s1.b.x, y2 = s1.b.y;
+static double ObterT(TSegmento raio, TSegmento s2) {
+    double x1 = raio.a.x, y1 = raio.a.y;
+    double x2 = raio.b.x, y2 = raio.b.y;
     double x3 = s2.a.x, y3 = s2.a.y;
     double x4 = s2.b.x, y4 = s2.b.y;
+    
     double den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
-    if (fabs(den) < 1e-12) return 0;
-    double px = ((x1*y2 - y1*x2)*(x3 - x4) - (x1-x2)*(x3*y4 - y3*x4)) / den;
-    double py = ((x1*y2 - y1*x2)*(y3 - y4) - (y1-y2)*(x3*y4 - y3*x4)) / den;
-    double eps = 1e-9;
-    if (px < fmin(x1,x2)-eps || px > fmax(x1,x2)+eps) return 0;
-    if (py < fmin(y1,y2)-eps || py > fmax(y1,y2)+eps) return 0;
-    if (px < fmin(x3,x4)-eps || px > fmax(x3,x4)+eps) return 0;
-    if (py < fmin(y3,y4)-eps || py > fmax(y3,y4)+eps) return 0;
-    resp->x = px; resp->y = py;
-    return 1;
-}
+    if (fabs(den) < 1e-12) return -1.0;
+    
+    double t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / den;
+    double u = -((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3)) / den;
 
-static int h(NoAVL *n) { return n ? n->h : 0; }
-static int max_int(int a, int b) { return (a > b) ? a : b; }
-
-static NoAVL* rotDir(NoAVL *y) {
-    NoAVL *x = y->esq; NoAVL *T2 = x->dir;
-    x->dir = y; y->esq = T2;
-    y->h = max_int(h(y->esq), h(y->dir)) + 1;
-    x->h = max_int(h(x->esq), h(x->dir)) + 1;
-    return x;
-}
-
-static NoAVL* rotEsq(NoAVL *x) {
-    NoAVL *y = x->dir; NoAVL *T2 = y->esq;
-    y->esq = x; x->dir = T2;
-    x->h = max_int(h(x->esq), h(x->dir)) + 1;
-    y->h = max_int(h(y->esq), h(y->dir)) + 1;
-    return y;
-}
-
-static int getBalance(NoAVL *n) { return n ? h(n->esq) - h(n->dir) : 0; }
-
-static NoAVL* avlIns(NoAVL *n, TSegmento s, double chave) {
-    if (!n) {
-        NoAVL *x = malloc(sizeof(NoAVL));
-        x->seg = s; x->chave = chave; x->h = 1; x->esq = x->dir = NULL;
-        return x;
+    if (u >= 0.0 && u <= 1.0) {
+        return t;
     }
-    if (chave < n->chave) n->esq = avlIns(n->esq, s, chave);
-    else n->dir = avlIns(n->dir, s, chave);
-    n->h = max_int(h(n->esq), h(n->dir)) + 1;
-    int bal = getBalance(n);
-    if (bal > 1 && chave < n->esq->chave) return rotDir(n);
-    if (bal < -1 && chave > n->dir->chave) return rotEsq(n);
-    if (bal > 1 && chave > n->esq->chave) { n->esq = rotEsq(n->esq); return rotDir(n); }
-    if (bal < -1 && chave < n->dir->chave) { n->dir = rotDir(n->dir); return rotEsq(n); }
-    return n;
-}
-
-static NoAVL* avlMin(NoAVL *n) { while (n && n->esq) n = n->esq; return n; }
-
-static NoAVL* avlRemove(NoAVL *root, double chave) {
-    if (!root) return NULL;
-    if (chave < root->chave) root->esq = avlRemove(root->esq, chave);
-    else if (chave > root->chave) root->dir = avlRemove(root->dir, chave);
-    else {
-        if (!root->esq || !root->dir) {
-            NoAVL *tmp = root->esq ? root->esq : root->dir;
-            free(root); return tmp;
-        }
-        NoAVL *temp = avlMin(root->dir);
-        root->chave = temp->chave;
-        root->seg = temp->seg;
-        root->dir = avlRemove(root->dir, temp->chave);
-    }
-    if (!root) return NULL;
-    root->h = max_int(h(root->esq), h(root->dir)) + 1;
-    int bal = getBalance(root);
-    if (bal > 1 && getBalance(root->esq) >= 0) return rotDir(root);
-    if (bal > 1 && getBalance(root->esq) < 0) { root->esq = rotEsq(root->esq); return rotDir(root); }
-    if (bal < -1 && getBalance(root->dir) <= 0) return rotEsq(root);
-    if (bal < -1 && getBalance(root->dir) > 0) { root->dir = rotDir(root->dir); return rotEsq(root); }
-    return root;
-}
-
-static void avlDestruir(NoAVL *n) {
-    if (!n) return;
-    avlDestruir(n->esq); avlDestruir(n->dir); free(n);
+    return -1.0;
 }
 
 Poligono CriarPoligono(int n) {
@@ -197,6 +114,9 @@ static void VisAddPonto(TVisibilidade *v, TPonto p) {
 static int compararEventos(const EventoVarredura a, const EventoVarredura b) {
     if (a.ang < b.ang) return -1;
     if (a.ang > b.ang) return 1;
+    if (a.tipo != b.tipo) {
+        return (a.tipo == TIPO_INICIO) ? -1 : 1; 
+    }
     return 0;
 }
 
@@ -213,27 +133,14 @@ static void insertionSort(EventoVarredura *arr, int l, int r) {
 }
 
 static void merge(EventoVarredura *arr, EventoVarredura *temp, int l, int m, int r) {
-    int i = l;
-    int j = m + 1;
-    int k = l;
-
-    // Intercala
+    int i = l, j = m + 1, k = l;
     while (i <= m && j <= r) {
-        if (compararEventos(arr[i], arr[j]) <= 0) {
-            temp[k++] = arr[i++];
-        } else {
-            temp[k++] = arr[j++];
-        }
+        if (compararEventos(arr[i], arr[j]) <= 0) temp[k++] = arr[i++];
+        else temp[k++] = arr[j++];
     }
-
-    // Copia restantes
     while (i <= m) temp[k++] = arr[i++];
     while (j <= r) temp[k++] = arr[j++];
-
-    // Copia de volta para o vetor original
-    for (i = l; i <= r; i++) {
-        arr[i] = temp[i];
-    }
+    for (i = l; i <= r; i++) arr[i] = temp[i];
 }
 
 static void mergeSortHibrido(EventoVarredura *arr, EventoVarredura *temp, int l, int r) {
@@ -241,7 +148,6 @@ static void mergeSortHibrido(EventoVarredura *arr, EventoVarredura *temp, int l,
         insertionSort(arr, l, r);
         return;
     }
-
     if (l < r) {
         int m = l + (r - l) / 2;
         mergeSortHibrido(arr, temp, l, m);
@@ -250,7 +156,24 @@ static void mergeSortHibrido(EventoVarredura *arr, EventoVarredura *temp, int l,
     }
 }
 
+typedef struct {
+    TSegmento raio;
+    double min_t;
+    int found;
+} BuscaCtx;
 
+static void check_intersection(void* data, void* ctx) {
+    TSegmento* seg = (TSegmento*)data;
+    BuscaCtx* bc = (BuscaCtx*)ctx;
+    
+    double t = ObterT(bc->raio, *seg);
+    if (t > 1e-9) {
+        if (bc->found == 0 || t < bc->min_t) {
+            bc->min_t = t;
+            bc->found = 1;
+        }
+    }
+}
 
 Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
     TPoligono *poly = (TPoligono*)P;
@@ -268,67 +191,97 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
     for (int i = 0; i < N; i++) {
         TSegmento s = poly->S[i];
         
-        eventos[2*i].v = s.a;
-        eventos[2*i].ang = atan2(s.a.y - origem.y, s.a.x - origem.x);
-        eventos[2*i].tipo = TIPO_INICIO;
-        eventos[2*i].seg = s;
+        double ang1 = atan2(s.a.y - origem.y, s.a.x - origem.x);
+        double ang2 = atan2(s.b.y - origem.y, s.b.x - origem.x);
+        
+        TPonto pInicio, pFim;
+        double angInicio, angFim;
+        double distKey;
 
-        eventos[2*i+1].v = s.b;
-        eventos[2*i+1].ang = atan2(s.b.y - origem.y, s.b.x - origem.x);
+        if (ang1 < ang2) {
+            pInicio = s.a; angInicio = ang1;
+            pFim = s.b;    angFim = ang2;
+            distKey = dist2(origem, s.a);
+        } else {
+            pInicio = s.b; angInicio = ang2;
+            pFim = s.a;    angFim = ang1;
+            distKey = dist2(origem, s.b);
+        }
+        
+        if (fabs(ang1 - ang2) > M_PI) {
+             if (ang1 < ang2) { 
+                pInicio = s.b; angInicio = ang2;
+                pFim = s.a;    angFim = ang1;
+                distKey = dist2(origem, s.b);
+             } else {
+                pInicio = s.a; angInicio = ang1;
+                pFim = s.b;    angFim = ang2;
+                distKey = dist2(origem, s.a);
+             }
+        }
+
+        eventos[2*i].v = pInicio;
+        eventos[2*i].ang = angInicio;
+        eventos[2*i].tipo = TIPO_INICIO;
+        eventos[2*i].seg = s; 
+        eventos[2*i].dist_key = distKey;
+
+        eventos[2*i+1].v = pFim;
+        eventos[2*i+1].ang = angFim;
         eventos[2*i+1].tipo = TIPO_FIM;
         eventos[2*i+1].seg = s;
+        eventos[2*i+1].dist_key = distKey;
     }
 
     EventoVarredura *temp = malloc(sizeof(EventoVarredura) * numEventos);
     if (temp) {
         mergeSortHibrido(eventos, temp, 0, numEventos - 1);
         free(temp);
-    } else {
-      
     }
-  
 
-    TSetAVL ativos;
-    ativos.raiz = NULL;
+    TreeNode raiz = NULL;
+    iniciar_tree(&raiz);
+
     TPonto biombo = eventos[0].v; 
 
     for (int i = 0; i < numEventos; i++) {
         EventoVarredura ev = eventos[i];
-        double d = dist2(origem, ev.v);
+        TSegmento* segPtr = malloc(sizeof(TSegmento));
+        *segPtr = ev.seg;
 
         if (ev.tipo == TIPO_INICIO) {
-            ativos.raiz = avlIns(ativos.raiz, ev.seg, d);
-            
-            NoAVL *maisProximo = avlMin(ativos.raiz);
-            TPonto inter;
-            TSegmento raio = { origem, ev.v };
+            inserir_tree(&raiz, ev.dist_key, segPtr);
+        } else {
+            remover_tree(&raiz, ev.dist_key, NULL);
+            free(segPtr);
+        }
 
-            if (maisProximo && Intersec(raio, maisProximo->seg, &inter)) {
-                if (dist2(inter, ev.v) > 1e-9) {
-                     VisAddPonto(vis, biombo); VisAddPonto(vis, inter); biombo = inter;
-                } else {
-                     VisAddPonto(vis, biombo); VisAddPonto(vis, ev.v); biombo = ev.v;
-                }
-            } else {
-                VisAddPonto(vis, biombo); VisAddPonto(vis, ev.v); biombo = ev.v;
-            }
+        BuscaCtx ctx;
+        ctx.raio.a = origem;
+        ctx.raio.b = ev.v;
+        ctx.min_t = 1.0;
+        ctx.found = 0;
 
-        } else { // TIPO_FIM
-            ativos.raiz = avlRemove(ativos.raiz, d);
-            NoAVL *maisProximo = avlMin(ativos.raiz);
+        tree_iterar(raiz, check_intersection, &ctx);
+
+        if (ctx.found && ctx.min_t < 0.999999999) {
             TPonto inter;
-            TSegmento raio = { origem, ev.v };
+            inter.x = origem.x + ctx.min_t * (ev.v.x - origem.x);
+            inter.y = origem.y + ctx.min_t * (ev.v.y - origem.y);
             
-            if (maisProximo && Intersec(raio, maisProximo->seg, &inter)) {
-                VisAddPonto(vis, biombo); VisAddPonto(vis, inter); biombo = inter;
-            } else {
-                VisAddPonto(vis, biombo); VisAddPonto(vis, ev.v); biombo = ev.v;
-            }
+            VisibilidadeGetPonto(vis, 0); 
+            VisAddPonto(vis, biombo); 
+            VisAddPonto(vis, inter); 
+            biombo = inter;
+        } else {
+            VisAddPonto(vis, biombo); 
+            VisAddPonto(vis, ev.v); 
+            biombo = ev.v;
         }
     }
 
+    liberar_tree(&raiz); 
     free(eventos);
-    avlDestruir(ativos.raiz);
     return (Visibilidade)vis;
 }
 
