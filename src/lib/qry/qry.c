@@ -41,23 +41,26 @@ void desenhar_cenario_atual(FILE* svg, Lista lista_formas) {
     while (p) {
         FormaStruct* f = (FormaStruct*) get_valor_lista(lista_formas, p);
         if (!f->foi_destruida) {
+             // ALTERADO: 
+             // fill-opacity='0.5': Cores mais vivas (50%) mas ainda transparentes.
+             // stroke-opacity='1.0': Bordas totalmente sólidas para definição.
              switch(f->tipo) {
                 case TIPO_CIRCULO: {
                     Circulo c = (Circulo)f->dados_forma;
-                    fprintf(svg, "<circle id='%d' cx='%.2f' cy='%.2f' r='%.2f' stroke='%s' fill='%s' />\n",
+                    fprintf(svg, "<circle id='%d' cx='%.2f' cy='%.2f' r='%.2f' stroke='%s' fill='%s' fill-opacity='0.5' stroke-opacity='1.0' />\n",
                         f->id_original, get_x(c), get_y(c), get_raio(c), get_corBorda_circulo(c), get_corPreenchimento_circulo(c));
                     break;
                 }
                 case TIPO_RETANGULO: {
                     Retangulo r = (Retangulo)f->dados_forma;
-                    fprintf(svg, "<rect id='%d' x='%.2f' y='%.2f' width='%.2f' height='%.2f' stroke='%s' fill='%s' />\n",
+                    fprintf(svg, "<rect id='%d' x='%.2f' y='%.2f' width='%.2f' height='%.2f' stroke='%s' fill='%s' fill-opacity='0.5' stroke-opacity='1.0' />\n",
                         f->id_original, get_x_retangulo(r), get_y_retangulo(r), get_largura(r), get_altura(r),
                         get_corBorda_retangulo(r), get_corPreenchimento_retangulo(r));
                     break;
                 }
                 case TIPO_LINHA: {
                     Linha l = (Linha)f->dados_forma;
-                    fprintf(svg, "<line id='%d' x1='%.2f' y1='%.2f' x2='%.2f' y2='%.2f' stroke='%s' />\n",
+                    fprintf(svg, "<line id='%d' x1='%.2f' y1='%.2f' x2='%.2f' y2='%.2f' stroke='%s' stroke-opacity='1.0' />\n",
                         f->id_original, get_x1_linha(l), get_y1_linha(l), get_x2_linha(l), get_y2_linha(l), get_cor_linha(l));
                     break;
                 }
@@ -68,7 +71,8 @@ void desenhar_cenario_atual(FILE* svg, Lista lista_formas) {
                     if (a == 'm') strcpy(anchor_svg, "middle");
                     else if (a == 'f') strcpy(anchor_svg, "end");
 
-                    fprintf(svg, "<text id='%d' x='%.2f' y='%.2f' stroke='%s' fill='%s' text-anchor='%s'>%s</text>\n",
+                    // Texto um pouco mais opaco (0.8) para legibilidade
+                    fprintf(svg, "<text id='%d' x='%.2f' y='%.2f' stroke='%s' fill='%s' fill-opacity='0.8' stroke-opacity='1.0' text-anchor='%s'>%s</text>\n",
                         f->id_original, get_x_texto(t), get_y_texto(t), get_corBorda_texto(t), 
                         get_corPreenchimento_texto(t), anchor_svg, get_conteudo_texto(t));
                     break;
@@ -83,15 +87,28 @@ double dist_sq(double x1, double y1, double x2, double y2) {
     return (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
 }
 
+// Função robusta que detecta interseção mesmo em casos colineares (sobreposição)
 bool segmentos_intersectam(double x1, double y1, double x2, double y2, 
                            double x3, double y3, double x4, double y4) {
     double den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
-    if (fabs(den) < 1e-12) return false;
+    
+    if (fabs(den) < 1e-9) {
+         double cross = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1);
+         if (fabs(cross) > 1e-9) return false; 
+         
+         double minx1 = fmin(x1, x2), maxx1 = fmax(x1, x2);
+         double minx2 = fmin(x3, x4), maxx2 = fmax(x3, x4);
+         double miny1 = fmin(y1, y2), maxy1 = fmax(y1, y2);
+         double miny2 = fmin(y3, y4), maxy2 = fmax(y3, y4);
+
+         if (maxx1 >= minx2 && maxx2 >= minx1 && maxy1 >= miny2 && maxy2 >= miny1) return true;
+         return false;
+    }
 
     double t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / den;
     double u = -((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3)) / den;
 
-    return (t >= 0 && t <= 1 && u >= 0 && u <= 1);
+    return (t >= -1e-9 && t <= 1.0 + 1e-9 && u >= -1e-9 && u <= 1.0 + 1e-9);
 }
 
 double dist_sq_ponto_segmento(double px, double py, double ax, double ay, double bx, double by) {
@@ -133,7 +150,8 @@ void desenhar_visibilidade_svg(FILE *svg, Visibilidade vis, double x_bomb, doubl
         fprintf(svg, "%.2f,%.2f ", PontoX(p), PontoY(p));
         free(p);
     }
-    fprintf(svg, "\" style=\"fill:%s;fill-opacity:0.3;stroke:none\" />\n", cor);
+    // Visibilidade em 0.5 para consistência
+    fprintf(svg, "\" style=\"fill:%s;fill-opacity:0.5;stroke:none\" />\n", cor);
     fprintf(svg, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"3\" fill=\"red\" />\n", x_bomb, y_bomb);
 }
 
@@ -194,7 +212,6 @@ bool circulo_visivel(Visibilidade vis, double cx, double cy, double r) {
         if (dist_sq(PontoX(pa), PontoY(pa), cx, cy) <= r2) {
             free(pa); free(pb); return true;
         }
-
         if (dist_sq_ponto_segmento(cx, cy, PontoX(pa), PontoY(pa), PontoX(pb), PontoY(pb)) <= r2) {
             free(pa); free(pb); return true;
         }
@@ -440,6 +457,7 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
         if (sscanf(linha, "%s", cmd) != 1) continue;
 
         if (strcmp(cmd, "a") == 0) {
+            
             int id_i, id_f;
             char orientacao[5] = "v";
             
@@ -456,12 +474,10 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                 FormaStruct* f = (FormaStruct*)get_valor_lista(lista_formas, p);
                 
                 if (!f->foi_destruida && f->id_original >= id_i && f->id_original <= id_f) {
-                    
                     if (f->tipo == TIPO_CIRCULO || f->tipo == TIPO_RETANGULO || f->tipo == TIPO_TEXTO) {
-                        
                         if (txt) fprintf(txt, "Transformado: %s ID %d\n", obter_nome_tipo(f->tipo), f->id_original);
                         f->foi_destruida = true;
-
+                        
                         double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
                         char cor[32];
                         strcpy(cor, "#000000"); 
@@ -542,7 +558,6 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             }
             free(novos_anteparos);
         }
-
         else if (strcmp(cmd, "d") == 0 || strcmp(cmd, "p") == 0 || strcmp(cmd, "cln") == 0) {
             double x, y;
             char sfx[32] = "-";
@@ -572,18 +587,6 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             
             Ponto origem = CriarPonto(x, y);
             Visibilidade vis = CalcularVisibilidade(anteparos, origem);
-
-            char nome_arquivo_svg[512];
-            sprintf(nome_arquivo_svg, "%s/%s-%s.svg", dir_saida, nome_base, sfx);
-            FILE* svg_cmd = fopen(nome_arquivo_svg, "w");
-            
-            if (svg_cmd) {
-               fprintf(svg_cmd, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
-                desenhar_cenario_atual(svg_cmd, lista_formas);
-                desenhar_visibilidade_svg(svg_cmd, vis, x, y, (strcmp(cmd, "p")==0 ? cor : (strcmp(cmd,"cln")==0 ? "blue" : "yellow")));
-                fprintf(svg_cmd, "</svg>");
-                fclose(svg_cmd);
-            }
             
             Lista novos_clones = NULL;
             if (strcmp(cmd, "cln") == 0) {
@@ -634,6 +637,18 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                     inserir_fim_lista(&lista_clones, val); 
                 }
                 free(novos_clones);
+            }
+
+            char nome_arquivo_svg[512];
+            sprintf(nome_arquivo_svg, "%s/%s-%s.svg", dir_saida, nome_base, sfx);
+            FILE* svg_cmd = fopen(nome_arquivo_svg, "w");
+            
+            if (svg_cmd) {
+               fprintf(svg_cmd, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
+                desenhar_cenario_atual(svg_cmd, lista_formas);
+                desenhar_visibilidade_svg(svg_cmd, vis, x, y, (strcmp(cmd, "p")==0 ? cor : (strcmp(cmd,"cln")==0 ? "blue" : "yellow")));
+                fprintf(svg_cmd, "</svg>");
+                fclose(svg_cmd);
             }
 
             free(origem);

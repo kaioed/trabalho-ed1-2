@@ -39,7 +39,7 @@ typedef struct {
     TPonto v;
     double ang;
     int tipo; 
-    TSegmento seg; 
+    TSegmento *seg; 
     double dist_key; 
 } EventoVarredura;
 
@@ -189,48 +189,48 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
     EventoVarredura *eventos = malloc(sizeof(EventoVarredura) * numEventos);
 
     for (int i = 0; i < N; i++) {
-        TSegmento s = poly->S[i];
+        TSegmento *sPtr = &poly->S[i];
+        TSegmento s = *sPtr;
         
         double ang1 = atan2(s.a.y - origem.y, s.a.x - origem.x);
         double ang2 = atan2(s.b.y - origem.y, s.b.x - origem.x);
         
-        TPonto pInicio, pFim;
-        double angInicio, angFim;
-        double distKey;
+        TPonto pMenor = s.a, pMaior = s.b;
+        double angMenor = ang1, angMaior = ang2;
 
-        if (ang1 < ang2) {
-            pInicio = s.a; angInicio = ang1;
-            pFim = s.b;    angFim = ang2;
-            distKey = dist2(origem, s.a);
-        } else {
-            pInicio = s.b; angInicio = ang2;
-            pFim = s.a;    angFim = ang1;
-            distKey = dist2(origem, s.b);
+        if (ang1 > ang2) {
+            pMenor = s.b; angMenor = ang2;
+            pMaior = s.a; angMaior = ang1;
         }
-        
+
+        int idx1 = 2*i;
+        int idx2 = 2*i+1;
+
         if (fabs(ang1 - ang2) > M_PI) {
-             if (ang1 < ang2) { 
-                pInicio = s.b; angInicio = ang2;
-                pFim = s.a;    angFim = ang1;
-                distKey = dist2(origem, s.b);
-             } else {
-                pInicio = s.a; angInicio = ang1;
-                pFim = s.b;    angFim = ang2;
-                distKey = dist2(origem, s.a);
-             }
+            eventos[idx1].v = pMenor;
+            eventos[idx1].ang = angMenor;
+            eventos[idx1].tipo = TIPO_FIM;
+            eventos[idx1].seg = sPtr;
+            eventos[idx1].dist_key = dist2(origem, pMenor);
+
+            eventos[idx2].v = pMaior;
+            eventos[idx2].ang = angMaior;
+            eventos[idx2].tipo = TIPO_INICIO;
+            eventos[idx2].seg = sPtr;
+            eventos[idx2].dist_key = dist2(origem, pMaior);
+        } else {
+            eventos[idx1].v = pMenor;
+            eventos[idx1].ang = angMenor;
+            eventos[idx1].tipo = TIPO_INICIO;
+            eventos[idx1].seg = sPtr;
+            eventos[idx1].dist_key = dist2(origem, pMenor);
+
+            eventos[idx2].v = pMaior;
+            eventos[idx2].ang = angMaior;
+            eventos[idx2].tipo = TIPO_FIM;
+            eventos[idx2].seg = sPtr;
+            eventos[idx2].dist_key = dist2(origem, pMenor); 
         }
-
-        eventos[2*i].v = pInicio;
-        eventos[2*i].ang = angInicio;
-        eventos[2*i].tipo = TIPO_INICIO;
-        eventos[2*i].seg = s; 
-        eventos[2*i].dist_key = distKey;
-
-        eventos[2*i+1].v = pFim;
-        eventos[2*i+1].ang = angFim;
-        eventos[2*i+1].tipo = TIPO_FIM;
-        eventos[2*i+1].seg = s;
-        eventos[2*i+1].dist_key = distKey;
     }
 
     EventoVarredura *temp = malloc(sizeof(EventoVarredura) * numEventos);
@@ -242,18 +242,28 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
     TreeNode raiz = NULL;
     iniciar_tree(&raiz);
 
-    TPonto biombo = eventos[0].v; 
+    for (int i = 0; i < N; i++) {
+        TSegmento *sPtr = &poly->S[i];
+        TSegmento s = *sPtr;
+        double ang1 = atan2(s.a.y - origem.y, s.a.x - origem.x);
+        double ang2 = atan2(s.b.y - origem.y, s.b.x - origem.x);
+        
+        if (fabs(ang1 - ang2) > M_PI) {
+            TPonto pMenor = (ang1 < ang2) ? s.a : s.b;
+            double distKey = dist2(origem, pMenor);
+            inserir_tree(&raiz, distKey, sPtr);
+        }
+    }
+
+    TPonto biombo = eventos[0].v;
 
     for (int i = 0; i < numEventos; i++) {
         EventoVarredura ev = eventos[i];
-        TSegmento* segPtr = malloc(sizeof(TSegmento));
-        *segPtr = ev.seg;
-
+        
         if (ev.tipo == TIPO_INICIO) {
-            inserir_tree(&raiz, ev.dist_key, segPtr);
+            inserir_tree(&raiz, ev.dist_key, ev.seg);
         } else {
-            remover_tree(&raiz, ev.dist_key, NULL);
-            free(segPtr);
+            remover_tree(&raiz, ev.dist_key, ev.seg);
         }
 
         BuscaCtx ctx;
