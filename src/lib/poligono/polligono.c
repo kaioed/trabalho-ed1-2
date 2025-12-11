@@ -1,15 +1,20 @@
 #include "poligono.h"
+#include "../arvore/tree.h"
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
 #include <float.h>
 #include <string.h>
+#include <stdint.h> 
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 #define EPSILON 1e-5
+
+static char TIPO_ORDENACAO = 'q'; 
+static int LIMIAR_INSERTION = 10; 
 
 typedef struct {
     double x, y;
@@ -43,10 +48,79 @@ typedef struct {
     TSegmentoInternal *segmento;
 } Evento;
 
-typedef struct NoAtivo {
-    TSegmentoInternal *seg;
-    struct NoAtivo *prox;
-} NoAtivo;
+static int comparar_eventos(const void *a, const void *b) {
+    Evento *e1 = (Evento*)a;
+    Evento *e2 = (Evento*)b;
+    
+    if (fabs(e1->angulo - e2->angulo) > EPSILON) {
+        return (e1->angulo < e2->angulo) ? -1 : 1;
+    }
+    
+    if (e1->tipo != e2->tipo) {
+        return (e1->tipo == EVENTO_INICIO) ? -1 : 1;
+    }
+    
+    if (fabs(e1->distancia - e2->distancia) > EPSILON) {
+        return (e1->distancia < e2->distancia) ? -1 : 1;
+    }
+    return 0;
+}
+
+static int cmp_evento_struct(Evento e1, Evento e2) {
+    if (fabs(e1.angulo - e2.angulo) > EPSILON) {
+        return (e1.angulo < e2.angulo) ? -1 : 1;
+    }
+    if (e1.tipo != e2.tipo) {
+        return (e1.tipo == EVENTO_INICIO) ? -1 : 1;
+    }
+    if (fabs(e1.distancia - e2.distancia) > EPSILON) {
+        return (e1.distancia < e2.distancia) ? -1 : 1;
+    }
+    return 0;
+}
+
+static void insertion_sort_eventos(Evento *arr, int l, int r) {
+    for (int i = l + 1; i <= r; i++) {
+        Evento key = arr[i];
+        int j = i - 1;
+        while (j >= l && cmp_evento_struct(arr[j], key) > 0) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        arr[j + 1] = key;
+    }
+}
+
+static void merge(Evento *arr, Evento *aux, int l, int m, int r) {
+    for (int k = l; k <= r; k++) aux[k] = arr[k];
+    
+    int i = l, j = m + 1, k = l;
+    while (i <= m && j <= r) {
+        if (cmp_evento_struct(aux[i], aux[j]) <= 0) arr[k++] = aux[i++];
+        else arr[k++] = aux[j++];
+    }
+    while (i <= m) arr[k++] = aux[i++];
+}
+
+static void merge_sort_recursivo(Evento *arr, Evento *aux, int l, int r) {
+    if (r - l + 1 <= LIMIAR_INSERTION) {
+        insertion_sort_eventos(arr, l, r);
+        return;
+    }
+    
+    int m = l + (r - l) / 2;
+    merge_sort_recursivo(arr, aux, l, m);
+    merge_sort_recursivo(arr, aux, m + 1, r);
+    merge(arr, aux, l, m, r);
+}
+
+static void merge_sort_eventos(Evento *arr, int n) {
+    Evento *aux = malloc(n * sizeof(Evento));
+    if (aux) {
+        merge_sort_recursivo(arr, aux, 0, n - 1);
+        free(aux);
+    }
+}
 
 static double dist_sq(double x1, double y1, double x2, double y2) {
     return (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
@@ -112,65 +186,22 @@ static int intersecao_raio_seg(TPontoInternal origem, TPontoInternal direcao, TS
     return 0;
 }
 
-static int comparar_eventos(const void *a, const void *b) {
-    Evento *e1 = (Evento*)a;
-    Evento *e2 = (Evento*)b;
-    
-    if (fabs(e1->angulo - e2->angulo) > EPSILON) {
-        return (e1->angulo < e2->angulo) ? -1 : 1;
-    }
-    
-    if (e1->tipo != e2->tipo) {
-        return (e1->tipo == EVENTO_INICIO) ? -1 : 1;
-    }
-    
-    if (fabs(e1->distancia - e2->distancia) > EPSILON) {
-        return (e1->distancia < e2->distancia) ? -1 : 1;
-    }
-    return 0;
-}
+typedef struct {
+    TPontoInternal origem;
+    double angulo;
+    TSegmentoInternal* min_seg;
+    double min_dist;
+} ContextoBusca;
 
-static void lista_ativos_inserir(NoAtivo **head, TSegmentoInternal *seg) {
-    NoAtivo *curr = *head;
-    while(curr) {
-        if(curr->seg == seg) return;
-        curr = curr->prox;
-    }
-    NoAtivo *novo = malloc(sizeof(NoAtivo));
-    novo->seg = seg;
-    novo->prox = *head;
-    *head = novo;
-}
-
-static void lista_ativos_remover(NoAtivo **head, TSegmentoInternal *seg) {
-    NoAtivo *atual = *head;
-    NoAtivo *ant = NULL;
-    while (atual) {
-        if (atual->seg == seg) {
-            if (ant) ant->prox = atual->prox;
-            else *head = atual->prox;
-            free(atual);
-            return;
-        }
-        ant = atual;
-        atual = atual->prox;
-    }
-}
-
-static TSegmentoInternal* obter_mais_proximo(NoAtivo *head, TPontoInternal origem, double angulo) {
-    TSegmentoInternal *min_seg = NULL;
-    double min_dist = DBL_MAX;
+static void callback_buscar_proximo(void* data, void* ctx) {
+    TSegmentoInternal* seg = (TSegmentoInternal*)data;
+    ContextoBusca* c = (ContextoBusca*)ctx;
     
-    NoAtivo *atual = head;
-    while (atual) {
-        double d = distancia_raio_segmento(origem, angulo, atual->seg);
-        if (d < min_dist) {
-            min_dist = d;
-            min_seg = atual->seg;
-        }
-        atual = atual->prox;
+    double d = distancia_raio_segmento(c->origem, c->angulo, seg);
+    if (d < c->min_dist) {
+        c->min_dist = d;
+        c->min_seg = seg;
     }
-    return min_seg;
 }
 
 Poligono CriarPoligono(int n) {
@@ -259,14 +290,24 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
         eventos[idx_ev++] = (Evento){s->b, ang2, d2, EVENTO_FIM, s};
     }
     
-    qsort(eventos, idx_ev, sizeof(Evento), comparar_eventos);
+    if (TIPO_ORDENACAO == 'm') {
+        merge_sort_eventos(eventos, idx_ev);
+    } 
+    else if (TIPO_ORDENACAO == 'i') {
+        insertion_sort_eventos(eventos, 0, idx_ev - 1);
+    }
+    else {
+        qsort(eventos, idx_ev, sizeof(Evento), comparar_eventos);
+    }
     
-    NoAtivo *ativos = NULL;
+    TreeNode ativos;
+    iniciar_tree(&ativos);
+
     double angulo_inicial = 0.0;
     for (int i=0; i<n_segs; i++) {
         TSegmentoInternal *s = &segs_proc[i];
         if (distancia_raio_segmento(origem, angulo_inicial, s) < DBL_MAX) {
-            lista_ativos_inserir(&ativos, s);
+            inserir_tree(&ativos, (double)(uintptr_t)s, s);
         }
     }
     
@@ -274,7 +315,14 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
     vis->n = 0; vis->cap = 32;
     vis->pontos = malloc(sizeof(TPontoInternal) * vis->cap);
     
-    TSegmentoInternal *biombo = obter_mais_proximo(ativos, origem, angulo_inicial);
+    ContextoBusca ctx;
+    ctx.origem = origem;
+    ctx.angulo = angulo_inicial;
+    ctx.min_dist = DBL_MAX;
+    ctx.min_seg = NULL;
+    tree_iterar(ativos, callback_buscar_proximo, &ctx);
+    TSegmentoInternal *biombo = ctx.min_seg;
+
     TPontoInternal ultimo_ponto = {0,0};
     int tem_ultimo = 0;
     
@@ -293,12 +341,17 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
         TSegmentoInternal *antigo_biombo = biombo;
         
         if (ev.tipo == EVENTO_INICIO) {
-            lista_ativos_inserir(&ativos, ev.segmento);
+            inserir_tree(&ativos, (double)(uintptr_t)ev.segmento, ev.segmento);
         } else {
-            lista_ativos_remover(&ativos, ev.segmento);
+            remover_tree(&ativos, (double)(uintptr_t)ev.segmento, ev.segmento);
         }
         
-        biombo = obter_mais_proximo(ativos, origem, ev.angulo);
+        ctx.origem = origem;
+        ctx.angulo = ev.angulo;
+        ctx.min_dist = DBL_MAX;
+        ctx.min_seg = NULL;
+        tree_iterar(ativos, callback_buscar_proximo, &ctx);
+        biombo = ctx.min_seg;
         
         if (antigo_biombo != biombo) {
             if (antigo_biombo) {
@@ -339,11 +392,7 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
         }
     }
     
-    while(ativos) {
-        NoAtivo *t = ativos;
-        ativos = ativos->prox;
-        free(t);
-    }
+    liberar_tree(&ativos);
     free(segs_proc);
     free(eventos);
     
@@ -372,7 +421,15 @@ void DestruirVisibilidade(Visibilidade V) {
 }
 
 void definir_limiar_ordenacao(int limiar) {
-    (void)limiar;
+    if (limiar > 0) {
+        LIMIAR_INSERTION = limiar;
+    }
+}
+
+void definir_tipo_ordenacao(char tipo) {
+    if (tipo == 'm' || tipo == 'i' || tipo == 'q') {
+        TIPO_ORDENACAO = tipo;
+    }
 }
 
 double CalcularAreaVisibilidade(Visibilidade V) {

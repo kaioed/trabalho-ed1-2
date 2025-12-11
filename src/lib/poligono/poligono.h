@@ -141,4 +141,6 @@ void DestruirVisibilidade(Visibilidade V);
  */
 void definir_limiar_ordenacao(int limiar);
 
+void definir_tipo_ordenacao(char tipo);
+
 #endif

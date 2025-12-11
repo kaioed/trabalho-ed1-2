@@ -2,14 +2,12 @@
 #include <stdio.h>
 #include "lista.h"
 
-// Estrutura do Nó (Elemento)
 typedef struct elemento {
     void* valor;
     struct elemento* proximo;
     struct elemento* anterior;
 } Elemento;
 
-// Estrutura da Lista (Descritor)
 typedef struct lista_impl {
     Elemento* inicio;
     Elemento* fim;

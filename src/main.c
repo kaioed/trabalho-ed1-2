@@ -33,16 +33,24 @@ int main(int argc, char *argv[]) {
     char *dir_base_saida   = obter_valor_opcao(argc, argv, "o");
     char *nome_arquivo_qry = obter_valor_opcao(argc, argv, "q");
     char *valor_i          = obter_valor_opcao(argc, argv, "i");
+    char *valor_to         = obter_valor_opcao(argc, argv, "to"); // NOVO
 
     if (!nome_arquivo_geo || !dir_base_saida) {
-        fprintf(stderr, "Uso incorreto.\nObrigatorio: -f <arquivo.geo> -o <diretorio_saida>\nOpcional: -e <diretorio_entrada> -q <arquivo.qry> -i <limiar_sort>\n");
+        fprintf(stderr, "Uso incorreto.\nObrigatorio: -f <arquivo.geo> -o <diretorio_saida>\nOpcional: -e <diretorio_entrada> -q <arquivo.qry> -i <limiar_sort> -to <tipo_sort>\n");
         return 1;
     }
 
+    // Configuração do Limiar (-i)
     if (valor_i) {
         int limiar = atoi(valor_i);
         definir_limiar_ordenacao(limiar);
-        printf("Limiar de ordenacao (Merge/Insertion) definido para: %d\n", limiar);
+        printf("Limiar de ordenacao definido para: %d\n", limiar);
+    }
+
+    // Configuração do Tipo de Ordenação (-to)
+    if (valor_to) {
+        definir_tipo_ordenacao(valor_to[0]);
+        printf("Tipo de ordenacao definido para: %c\n", valor_to[0]);
     }
 
     char caminho_geo[512];
