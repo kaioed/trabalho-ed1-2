@@ -1,3 +1,7 @@
+/**
+ * @file retangulo.h
+ * @brief Header adicionado automaticamente.
+ */
 #ifndef RETANGULO_H
 #define RETANGULO_H
 

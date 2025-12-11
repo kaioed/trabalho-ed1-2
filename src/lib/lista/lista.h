@@ -1,3 +1,7 @@
+/**
+ * @file lista.h
+ * @brief Header adicionado automaticamente.
+ */
 #ifndef LISTA_H
 #define LISTA_H
 

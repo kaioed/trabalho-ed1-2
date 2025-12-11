@@ -1,3 +1,7 @@
+/**
+ * @file circulo.h
+ * @brief Header adicionado automaticamente.
+ */
 #ifndef CIRCULO_H
 #define CIRCULO_H
 

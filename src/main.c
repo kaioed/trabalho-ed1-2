@@ -33,21 +33,19 @@ int main(int argc, char *argv[]) {
     char *dir_base_saida   = obter_valor_opcao(argc, argv, "o");
     char *nome_arquivo_qry = obter_valor_opcao(argc, argv, "q");
     char *valor_i          = obter_valor_opcao(argc, argv, "i");
-    char *valor_to         = obter_valor_opcao(argc, argv, "to"); // NOVO
+    char *valor_to         = obter_valor_opcao(argc, argv, "to");
 
     if (!nome_arquivo_geo || !dir_base_saida) {
         fprintf(stderr, "Uso incorreto.\nObrigatorio: -f <arquivo.geo> -o <diretorio_saida>\nOpcional: -e <diretorio_entrada> -q <arquivo.qry> -i <limiar_sort> -to <tipo_sort>\n");
         return 1;
     }
 
-    // Configuração do Limiar (-i)
     if (valor_i) {
         int limiar = atoi(valor_i);
         definir_limiar_ordenacao(limiar);
         printf("Limiar de ordenacao definido para: %d\n", limiar);
     }
 
-    // Configuração do Tipo de Ordenação (-to)
     if (valor_to) {
         definir_tipo_ordenacao(valor_to[0]);
         printf("Tipo de ordenacao definido para: %c\n", valor_to[0]);
@@ -108,24 +106,40 @@ int main(int argc, char *argv[]) {
         char nome_txt[600];
         sprintf(nome_txt, "%s-%s.txt", geo_sem_ext, qry_sem_ext);
         montar_caminho(dir_base_saida, nome_txt, caminho_txt);
+        
+        char nome_svg_qry[600];
+        sprintf(nome_svg_qry, "%s-%s.svg", geo_sem_ext, qry_sem_ext);
+        char caminho_svg_qry[600];
+        montar_caminho(dir_base_saida, nome_svg_qry, caminho_svg_qry);
 
         FILE *f_qry = fopen(caminho_qry, "r");
         FILE *f_txt = fopen(caminho_txt, "w");
+        FILE *f_svg_qry = fopen(caminho_svg_qry, "w");
 
         if (!f_qry) {
             fprintf(stderr, "Erro ao abrir arquivo QRY: %s\n", caminho_qry);
+            if (f_svg_qry) fclose(f_svg_qry);
         } else {
             if (!f_txt) {
                 fprintf(stderr, "Erro ao criar arquivo TXT: %s\n", caminho_txt);
+            } else if (!f_svg_qry) {
+                fprintf(stderr, "Erro ao criar arquivo SVG QRY: %s\n", caminho_svg_qry);
             } else {
                 printf("Processando QRY: %s\n", caminho_qry);
+                
+                fprintf(f_svg_qry, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
                 
                 char nome_base_combinado[600];
                 sprintf(nome_base_combinado, "%s-%s", geo_sem_ext, qry_sem_ext);
 
-                process_qry(f_qry, dir_base_saida, nome_base_combinado, ground, f_txt);
+                process_qry(f_qry, dir_base_saida, nome_base_combinado, ground, f_txt, f_svg_qry);
+                
+                ground_escrever_svg(ground, f_svg_qry);
+                
+                fprintf(f_svg_qry, "</svg>\n");
 
                 fclose(f_txt);
+                fclose(f_svg_qry);
             }
             fclose(f_qry);
         }

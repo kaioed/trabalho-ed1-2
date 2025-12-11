@@ -422,7 +422,7 @@ void adicionar_retangulo_limite(Poligono poly, Lista lista_formas, double bx, do
     adicionar_segmento_no_poligono(poly, xmin, ymax, xmin, ymin);
 }
 
-void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* ground, FILE *txt) {
+void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, Ground ground, FILE *txt, FILE* svg_geral) {
     if (!qry || !ground) return;
 
     Lista lista_formas = get_ground_lista_formas(ground);
@@ -646,16 +646,24 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                 free(novos_clones);
             }
 
-            char nome_arquivo_svg[512];
-            sprintf(nome_arquivo_svg, "%s/%s-%s.svg", dir_saida, nome_base, sfx);
-            FILE* svg_cmd = fopen(nome_arquivo_svg, "w");
-            
-            if (svg_cmd) {
-               fprintf(svg_cmd, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
-                desenhar_cenario_atual(svg_cmd, lista_formas);
-                desenhar_visibilidade_svg(svg_cmd, vis, x, y, (strcmp(cmd, "p")==0 ? cor : (strcmp(cmd,"cln")==0 ? "blue" : "yellow")));
-                fprintf(svg_cmd, "</svg>");
-                fclose(svg_cmd);
+            const char* cor_vis = (strcmp(cmd, "p")==0 ? cor : (strcmp(cmd,"cln")==0 ? "blue" : "yellow"));
+
+            if (strcmp(sfx, "-") == 0) {
+                if (svg_geral) {
+                     desenhar_visibilidade_svg(svg_geral, vis, x, y, cor_vis);
+                }
+            } else {
+                char nome_arquivo_svg[512];
+                sprintf(nome_arquivo_svg, "%s/%s-%s.svg", dir_saida, nome_base, sfx);
+                FILE* svg_cmd = fopen(nome_arquivo_svg, "w");
+                
+                if (svg_cmd) {
+                   fprintf(svg_cmd, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
+                    desenhar_cenario_atual(svg_cmd, lista_formas);
+                    desenhar_visibilidade_svg(svg_cmd, vis, x, y, cor_vis);
+                    fprintf(svg_cmd, "</svg>");
+                    fclose(svg_cmd);
+                }
             }
 
             free(origem);

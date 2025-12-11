@@ -25,12 +25,12 @@ typedef struct {
 typedef struct {
     Lista formas;
     Lista clones;
-    FILE* svg;
+    FILE* svg_geo;
 } GroundStruct;
 
 Ground criar_ground(FILE* svg) {
     GroundStruct* g = malloc(sizeof(GroundStruct));
-    g->svg = svg;
+    g->svg_geo = svg;
     iniciar_lista(&g->formas);
     iniciar_lista(&g->clones);
     return g;
@@ -93,6 +93,7 @@ void ground_inserir_forma(Ground g, TipoForma tipo, void* forma, int id) {
 }
 
 void escrever_svg_forma(FILE* svg, FormaStruct* f) {
+    if (!svg) return;
     switch (f->tipo) {
         case TIPO_CIRCULO: {
             Circulo c = (Circulo)f->dados_forma;
@@ -141,7 +142,8 @@ void escrever_svg_forma(FILE* svg, FormaStruct* f) {
     }
 }
 
-void ground_escrever_svg(Ground g) {
+void ground_escrever_svg(Ground g, FILE* svg) {
+    if (!svg) return;
     GroundStruct* gr = (GroundStruct*)g;
     Lista lst = gr->formas;
     Posic p = get_primeiro_lista(lst);
@@ -149,7 +151,7 @@ void ground_escrever_svg(Ground g) {
     while (p) {
         FormaStruct* f = get_valor_lista(lst, p);
         if (!f->foi_destruida)
-            escrever_svg_forma(gr->svg, f);
+            escrever_svg_forma(svg, f);
         p = get_proximo_lista(lst, p);
     }
 }
@@ -231,7 +233,7 @@ Ground process_geo(FILE *geo, FILE *svg) {
 
     if (svg) {
         fprintf(svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"1000\">\n");
-        ground_escrever_svg(g);
+        ground_escrever_svg(g, svg);
         fprintf(svg, "</svg>\n");
     }
 

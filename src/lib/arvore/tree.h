@@ -66,6 +66,14 @@ void* buscar_min_tree(TreeNode root);
 void liberar_tree(TreeNode* root);
 
 typedef void (*TreeCallback)(void* data, void* ctx);
+
+/**
+ * @brief Itera sobre todos os nós da árvore em ordem, aplicando uma função callback.
+ *
+ * @param root raiz da árvore a ser percorrida.
+ * @param fn função callback executada para cada nó.
+ * @param ctx contexto (dados adicionais) passado para cada chamada da callback.
+ */
 void tree_iterar(TreeNode root, TreeCallback fn, void* ctx);
 
 #endif

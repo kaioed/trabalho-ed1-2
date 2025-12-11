@@ -1,3 +1,7 @@
+/**
+ * @file texto.h
+ * @brief Header adicionado automaticamente.
+ */
 #ifndef TEXTO_H
 #define TEXTO_H
 

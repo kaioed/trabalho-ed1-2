@@ -1,3 +1,7 @@
+/**
+ * @file args.h
+ * @brief Header adicionado automaticamente.
+ */
 #ifndef ARGS_HANDLER_H
 #define ARGS_HANDLER_H
 

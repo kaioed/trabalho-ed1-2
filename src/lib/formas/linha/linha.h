@@ -1,11 +1,16 @@
+/**
+ * @file linha.h
+ * @brief Interface para criação e manipulação de linhas geométricas.
+ *
+ * Define operações para criar, gerenciar e consultar linhas definidas por dois pontos,
+ * incluindo cálculo de comprimento, área e propriedades como cor e identificador.
+ */
 #ifndef LINHA_H
 #define LINHA_H
 
-/*
- * @brief Linha é uma forma geométrica definida por dois pontos (x1, y1) e (x2, y2),
- * além de cor da linha e um identificador.
+/**
+ * @brief Tipo opaco para representar uma linha.
  */
-
 typedef void *Linha;
 
 
