@@ -357,7 +357,7 @@ void adicionar_retangulo_limite(Poligono poly, Lista lista_formas, double bx, do
     
     for (Posic p = get_primeiro_lista(lista_formas); p; p = get_proximo_lista(lista_formas, p)) {
         FormaStruct* f = (FormaStruct*) get_valor_lista(lista_formas, p);
-        if (!f) continue; // Removemos o '|| f->foi_destruida' para garantir tamanho fixo do mundo
+        if (!f) continue;
 
         switch (f->tipo) {
             case TIPO_CIRCULO: {
@@ -453,7 +453,11 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                 FormaStruct* f = (FormaStruct*)get_valor_lista(lista_formas, p);
                 
                 if (!f->foi_destruida && f->id_original >= id_i && f->id_original <= id_f) {
-                    if (f->tipo == TIPO_CIRCULO || f->tipo == TIPO_RETANGULO || f->tipo == TIPO_TEXTO) {
+                    if (f->tipo == TIPO_LINHA) {
+                        f->eh_anteparo = true;
+                        if (txt) fprintf(txt, "  %d (linha) transformado em anteparo\n", f->id_original);
+                    }
+                    else if (f->tipo == TIPO_CIRCULO || f->tipo == TIPO_RETANGULO || f->tipo == TIPO_TEXTO) {
                         f->foi_destruida = true;
                         
                         double x1 = 0, y1 = 0, x2 = 0, y2 = 0;

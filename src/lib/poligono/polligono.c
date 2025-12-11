@@ -9,7 +9,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#define EPSILON 1e-9
+#define EPSILON 1e-5
 
 typedef struct {
     double x, y;
@@ -83,7 +83,9 @@ static double distancia_raio_segmento(TPontoInternal origem, double angulo, TSeg
     double t = ((sx1 - ox) * segy - (sy1 - oy) * segx) / denom;
     double u = ((sx1 - ox) * dy - (sy1 - oy) * dx) / denom;
     
-    if (t >= -EPSILON && u >= -EPSILON && u <= 1.0 + EPSILON) return t;
+    if (t >= -EPSILON && u >= -EPSILON && u <= 1.0 + EPSILON) {
+        return (t < 0) ? 0.0 : t; 
+    }
     return DBL_MAX;
 }
 
@@ -129,6 +131,11 @@ static int comparar_eventos(const void *a, const void *b) {
 }
 
 static void lista_ativos_inserir(NoAtivo **head, TSegmentoInternal *seg) {
+    NoAtivo *curr = *head;
+    while(curr) {
+        if(curr->seg == seg) return;
+        curr = curr->prox;
+    }
     NoAtivo *novo = malloc(sizeof(NoAtivo));
     novo->seg = seg;
     novo->prox = *head;
@@ -218,10 +225,11 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
         double a1 = ponto_angulo(origem, s.a);
         double a2 = ponto_angulo(origem, s.b);
         
-        if ((a1 < EPSILON && a2 > M_PI) || (a2 < EPSILON && a1 > M_PI)) {
-            TPontoInternal dir = {origem.x + 10, origem.y};
+        if (fabs(a1 - a2) > M_PI) {
+            TPontoInternal dir = {origem.x + 10000, origem.y};
             TPontoInternal inter;
-            if (intersecao_raio_seg(origem, dir, &s, &inter)) {
+            TSegmentoInternal s_temp = s;
+            if (intersecao_raio_seg(origem, dir, &s_temp, &inter)) {
                 segs_proc[n_segs++] = (TSegmentoInternal){s.a, inter, s.id};
                 segs_proc[n_segs++] = (TSegmentoInternal){inter, s.b, s.id};
                 continue;
@@ -238,38 +246,40 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
         TSegmentoInternal *s = &segs_proc[i];
         double ang1 = ponto_angulo(origem, s->a);
         double ang2 = ponto_angulo(origem, s->b);
+        
+        if (ang1 > ang2) {
+            double temp = ang1; ang1 = ang2; ang2 = temp;
+            TPontoInternal tp = s->a; s->a = s->b; s->b = tp;
+        }
+        
         double d1 = ponto_dist(origem, s->a);
         double d2 = ponto_dist(origem, s->b);
         
-        if (ang1 < ang2) {
-            eventos[idx_ev++] = (Evento){s->a, ang1, d1, EVENTO_INICIO, s};
-            eventos[idx_ev++] = (Evento){s->b, ang2, d2, EVENTO_FIM, s};
-        } else {
-            eventos[idx_ev++] = (Evento){s->b, ang2, d2, EVENTO_INICIO, s};
-            eventos[idx_ev++] = (Evento){s->a, ang1, d1, EVENTO_FIM, s};
-        }
+        eventos[idx_ev++] = (Evento){s->a, ang1, d1, EVENTO_INICIO, s};
+        eventos[idx_ev++] = (Evento){s->b, ang2, d2, EVENTO_FIM, s};
     }
     
     qsort(eventos, idx_ev, sizeof(Evento), comparar_eventos);
     
     NoAtivo *ativos = NULL;
+    double angulo_inicial = 0.0;
     for (int i=0; i<n_segs; i++) {
         TSegmentoInternal *s = &segs_proc[i];
-        if (distancia_raio_segmento(origem, 0.0, s) < DBL_MAX) {
+        if (distancia_raio_segmento(origem, angulo_inicial, s) < DBL_MAX) {
             lista_ativos_inserir(&ativos, s);
         }
     }
     
     TVisibilidadeInternal *vis = malloc(sizeof(TVisibilidadeInternal));
-    vis->n = 0; vis->cap = 16;
+    vis->n = 0; vis->cap = 32;
     vis->pontos = malloc(sizeof(TPontoInternal) * vis->cap);
     
-    TSegmentoInternal *biombo = obter_mais_proximo(ativos, origem, 0.0);
+    TSegmentoInternal *biombo = obter_mais_proximo(ativos, origem, angulo_inicial);
     TPontoInternal ultimo_ponto = {0,0};
     int tem_ultimo = 0;
     
     if (biombo) {
-        TPontoInternal dir = {origem.x + 1000, origem.y};
+        TPontoInternal dir = {origem.x + 10000, origem.y};
         TPontoInternal inter;
         if (intersecao_raio_seg(origem, dir, biombo, &inter)) {
             vis->pontos[vis->n++] = inter;
@@ -280,55 +290,51 @@ Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
     
     for (int i=0; i<idx_ev; i++) {
         Evento ev = eventos[i];
+        TSegmentoInternal *antigo_biombo = biombo;
         
         if (ev.tipo == EVENTO_INICIO) {
             lista_ativos_inserir(&ativos, ev.segmento);
-            TSegmentoInternal *novo_biombo = obter_mais_proximo(ativos, origem, ev.angulo);
-            
-            if (novo_biombo == ev.segmento && biombo != ev.segmento) {
-                if (biombo && tem_ultimo) {
-                    TPontoInternal inter;
-                    if (intersecao_raio_seg(origem, ev.ponto, biombo, &inter)) {
-                        if (!ponto_igual(ultimo_ponto, inter)) {
-                            if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
-                            vis->pontos[vis->n++] = inter;
-                            ultimo_ponto = inter;
-                        }
-                    }
-                }
-                if (!tem_ultimo || !ponto_igual(ultimo_ponto, ev.ponto)) {
-                    if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
-                    vis->pontos[vis->n++] = ev.ponto;
-                    ultimo_ponto = ev.ponto;
-                    tem_ultimo = 1;
-                }
-                biombo = novo_biombo;
-            }
         } else {
-            if (ev.segmento == biombo) {
-                if (!tem_ultimo || !ponto_igual(ultimo_ponto, ev.ponto)) {
+            lista_ativos_remover(&ativos, ev.segmento);
+        }
+        
+        biombo = obter_mais_proximo(ativos, origem, ev.angulo);
+        
+        if (antigo_biombo != biombo) {
+            if (antigo_biombo) {
+                TPontoInternal inter;
+                if (intersecao_raio_seg(origem, ev.ponto, antigo_biombo, &inter)) {
+                     if (!tem_ultimo || !ponto_igual(ultimo_ponto, inter)) {
+                        if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
+                        vis->pontos[vis->n++] = inter;
+                        ultimo_ponto = inter;
+                        tem_ultimo = 1;
+                    }
+                }
+            }
+            
+            if (!tem_ultimo || !ponto_igual(ultimo_ponto, ev.ponto)) {
+                 double d_ev = ev.distancia;
+                 double d_biombo = biombo ? distancia_raio_segmento(origem, ev.angulo, biombo) : DBL_MAX;
+                 
+                 if (d_ev <= d_biombo + EPSILON) {
                     if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
                     vis->pontos[vis->n++] = ev.ponto;
                     ultimo_ponto = ev.ponto;
                     tem_ultimo = 1;
-                }
-                lista_ativos_remover(&ativos, ev.segmento);
-                TSegmentoInternal *novo_biombo = obter_mais_proximo(ativos, origem, ev.angulo);
-                
-                if (novo_biombo) {
-                    TPontoInternal inter;
-                    if (intersecao_raio_seg(origem, ev.ponto, novo_biombo, &inter)) {
-                        if (!tem_ultimo || !ponto_igual(ultimo_ponto, inter)) {
-                            if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
-                            vis->pontos[vis->n++] = inter;
-                            ultimo_ponto = inter;
-                            tem_ultimo = 1;
-                        }
+                 }
+            }
+
+            if (biombo) {
+                TPontoInternal inter;
+                if (intersecao_raio_seg(origem, ev.ponto, biombo, &inter)) {
+                    if (!tem_ultimo || !ponto_igual(ultimo_ponto, inter)) {
+                        if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
+                        vis->pontos[vis->n++] = inter;
+                        ultimo_ponto = inter;
+                        tem_ultimo = 1;
                     }
                 }
-                biombo = novo_biombo;
-            } else {
-                lista_ativos_remover(&ativos, ev.segmento);
             }
         }
     }
@@ -367,4 +373,21 @@ void DestruirVisibilidade(Visibilidade V) {
 
 void definir_limiar_ordenacao(int limiar) {
     (void)limiar;
+}
+
+double CalcularAreaVisibilidade(Visibilidade V) {
+    if (!V) return 0.0;
+    TVisibilidadeInternal *vis = (TVisibilidadeInternal*)V;
+    double area = 0.0;
+    int n = vis->n;
+    if (n < 3) return 0.0;
+
+    for (int i = 0; i < n; i++) {
+        double x1 = vis->pontos[i].x;
+        double y1 = vis->pontos[i].y;
+        double x2 = vis->pontos[(i + 1) % n].x;
+        double y2 = vis->pontos[(i + 1) % n].y;
+        area += (x1 * y2 - x2 * y1);
+    }
+    return fabs(area) / 2.0;
 }
