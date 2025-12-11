@@ -10,6 +10,7 @@
 #include "../formas/texto/texto.h"
 #include "../lista/lista.h"
 
+// DEVE SER IDÊNTICA A ESTRUTURA EM QRY.C
 typedef struct {
     int id_original;
     TipoForma tipo;
@@ -18,7 +19,8 @@ typedef struct {
     bool foi_clonada;
     float x_centro;
     float y_centro;
-    int id_disparador_origem;
+    int id_pai;        
+    bool eh_anteparo; 
 } FormaStruct;
 
 typedef struct {
@@ -50,7 +52,8 @@ void* criar_forma_wrapper(TipoForma tipo, void* forma, int id) {
     f->dados_forma = forma;
     f->foi_destruida = false;
     f->foi_clonada = false;
-    f->id_disparador_origem = -1;
+    f->id_pai = -1;
+    f->eh_anteparo = false; // Inicialização crucial: formas do GEO não são anteparos
 
     switch (tipo) {
         case TIPO_CIRCULO: {
@@ -161,7 +164,8 @@ void destruir_ground(Ground g) {
     }
 
     while (remover_inicio_lista(&gr->clones, &val)) {
-       
+        // Clones também estão na lista principal ou geridos separadamente
+        // Se estiverem duplicados na lista principal, cuidado com double free
     }
 
     liberar_lista(&gr->formas);
@@ -217,7 +221,6 @@ Ground process_geo(FILE *geo, FILE *svg) {
             fgets(conteudo, 256, geo);
             size_t len = strlen(conteudo);
             if (len > 0 && conteudo[len-1] == '\n') conteudo[len-1] = '\0';
-            
             if (len > 1 && conteudo[len-2] == '\r') conteudo[len-2] = '\0';
 
             Texto t = criar_texto(x, y, corB, corP, ancora, conteudo, "sans-serif", id);

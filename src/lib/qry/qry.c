@@ -20,7 +20,7 @@ typedef struct {
     bool foi_clonada;
     float x_centro, y_centro; 
     int id_pai;
-    bool eh_anteparo; 
+    bool eh_anteparo;
 } FormaStruct;
 
 static int proximo_id_clone = 20000;
@@ -357,7 +357,7 @@ void adicionar_retangulo_limite(Poligono poly, Lista lista_formas, double bx, do
     
     for (Posic p = get_primeiro_lista(lista_formas); p; p = get_proximo_lista(lista_formas, p)) {
         FormaStruct* f = (FormaStruct*) get_valor_lista(lista_formas, p);
-        if (!f || f->foi_destruida) continue;
+        if (!f) continue; // Removemos o '|| f->foi_destruida' para garantir tamanho fixo do mundo
 
         switch (f->tipo) {
             case TIPO_CIRCULO: {
