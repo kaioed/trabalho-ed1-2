@@ -1,317 +1,370 @@
 #include "poligono.h"
-#include "../arvore/tree.h" 
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
+#include <float.h>
+#include <string.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-#define TIPO_INICIO 0
-#define TIPO_FIM    1
-
-static int LIMIAR_INSERTION_SORT = 10;
-
-void definir_limiar_ordenacao(int limiar) {
-    if (limiar > 0) LIMIAR_INSERTION_SORT = limiar;
-}
+#define EPSILON 1e-9
 
 typedef struct {
     double x, y;
-} TPonto;
+} TPontoInternal;
 
 typedef struct {
-    TPonto a, b;
-} TSegmento;
+    TPontoInternal a, b;
+    int id; 
+} TSegmentoInternal;
 
 typedef struct {
-    TSegmento *S;
+    TSegmentoInternal *S;
     int n, cap;
-} TPoligono;
+} TPoligonoInternal;
 
 typedef struct {
-    TPonto *pontos;
+    TPontoInternal *pontos;
     int n, cap;
-} TVisibilidade;
+} TVisibilidadeInternal;
+
+typedef enum {
+    EVENTO_INICIO,
+    EVENTO_FIM
+} TipoEvento;
 
 typedef struct {
-    TPonto v;
-    double ang;
-    int tipo; 
-    TSegmento *seg; 
-    double dist_key; 
-} EventoVarredura;
+    TPontoInternal ponto;
+    double angulo;
+    double distancia;
+    TipoEvento tipo;
+    TSegmentoInternal *segmento;
+} Evento;
 
-static double dist2(TPonto a, TPonto b) {
-    double dx = a.x - b.x;
-    double dy = a.y - b.y;
-    return dx*dx + dy*dy;
+typedef struct NoAtivo {
+    TSegmentoInternal *seg;
+    struct NoAtivo *prox;
+} NoAtivo;
+
+static double dist_sq(double x1, double y1, double x2, double y2) {
+    return (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
 }
 
-static double ObterT(TSegmento raio, TSegmento s2) {
-    double x1 = raio.a.x, y1 = raio.a.y;
-    double x2 = raio.b.x, y2 = raio.b.y;
-    double x3 = s2.a.x, y3 = s2.a.y;
-    double x4 = s2.b.x, y4 = s2.b.y;
-    
-    double den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
-    if (fabs(den) < 1e-12) return -1.0;
-    
-    double t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / den;
-    double u = -((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3)) / den;
+static double ponto_dist(TPontoInternal p1, TPontoInternal p2) {
+    return sqrt(dist_sq(p1.x, p1.y, p2.x, p2.y));
+}
 
-    if (u >= 0.0 && u <= 1.0) {
-        return t;
+static int ponto_igual(TPontoInternal p1, TPontoInternal p2) {
+    return (fabs(p1.x - p2.x) < EPSILON && fabs(p1.y - p2.y) < EPSILON);
+}
+
+static double ponto_angulo(TPontoInternal origem, TPontoInternal p) {
+    double dx = p.x - origem.x;
+    double dy = p.y - origem.y;
+    double ang = atan2(dy, dx);
+    if (ang < 0) ang += 2.0 * M_PI;
+    return ang;
+}
+
+static double distancia_raio_segmento(TPontoInternal origem, double angulo, TSegmentoInternal *seg) {
+    double ox = origem.x, oy = origem.y;
+    double dx = cos(angulo), dy = sin(angulo);
+    double sx1 = seg->a.x, sy1 = seg->a.y;
+    double sx2 = seg->b.x, sy2 = seg->b.y;
+    
+    double segx = sx2 - sx1;
+    double segy = sy2 - sy1;
+    double denom = dx * segy - dy * segx;
+    
+    if (fabs(denom) < EPSILON) return DBL_MAX;
+    
+    double t = ((sx1 - ox) * segy - (sy1 - oy) * segx) / denom;
+    double u = ((sx1 - ox) * dy - (sy1 - oy) * dx) / denom;
+    
+    if (t >= -EPSILON && u >= -EPSILON && u <= 1.0 + EPSILON) return t;
+    return DBL_MAX;
+}
+
+static int intersecao_raio_seg(TPontoInternal origem, TPontoInternal direcao, TSegmentoInternal *seg, TPontoInternal *result) {
+    double ox = origem.x, oy = origem.y;
+    double dx = direcao.x - ox, dy = direcao.y - oy;
+    double sx1 = seg->a.x, sy1 = seg->a.y;
+    double sx2 = seg->b.x, sy2 = seg->b.y;
+    
+    double segx = sx2 - sx1;
+    double segy = sy2 - sy1;
+    double denom = dx * segy - dy * segx;
+    
+    if (fabs(denom) < EPSILON) return 0;
+    
+    double t = ((sx1 - ox) * segy - (sy1 - oy) * segx) / denom;
+    double u = ((sx1 - ox) * dy - (sy1 - oy) * dx) / denom;
+    
+    if (t >= -EPSILON && u >= -EPSILON && u <= 1.0 + EPSILON) {
+        result->x = ox + t * dx;
+        result->y = oy + t * dy;
+        return 1;
     }
-    return -1.0;
+    return 0;
+}
+
+static int comparar_eventos(const void *a, const void *b) {
+    Evento *e1 = (Evento*)a;
+    Evento *e2 = (Evento*)b;
+    
+    if (fabs(e1->angulo - e2->angulo) > EPSILON) {
+        return (e1->angulo < e2->angulo) ? -1 : 1;
+    }
+    
+    if (e1->tipo != e2->tipo) {
+        return (e1->tipo == EVENTO_INICIO) ? -1 : 1;
+    }
+    
+    if (fabs(e1->distancia - e2->distancia) > EPSILON) {
+        return (e1->distancia < e2->distancia) ? -1 : 1;
+    }
+    return 0;
+}
+
+static void lista_ativos_inserir(NoAtivo **head, TSegmentoInternal *seg) {
+    NoAtivo *novo = malloc(sizeof(NoAtivo));
+    novo->seg = seg;
+    novo->prox = *head;
+    *head = novo;
+}
+
+static void lista_ativos_remover(NoAtivo **head, TSegmentoInternal *seg) {
+    NoAtivo *atual = *head;
+    NoAtivo *ant = NULL;
+    while (atual) {
+        if (atual->seg == seg) {
+            if (ant) ant->prox = atual->prox;
+            else *head = atual->prox;
+            free(atual);
+            return;
+        }
+        ant = atual;
+        atual = atual->prox;
+    }
+}
+
+static TSegmentoInternal* obter_mais_proximo(NoAtivo *head, TPontoInternal origem, double angulo) {
+    TSegmentoInternal *min_seg = NULL;
+    double min_dist = DBL_MAX;
+    
+    NoAtivo *atual = head;
+    while (atual) {
+        double d = distancia_raio_segmento(origem, angulo, atual->seg);
+        if (d < min_dist) {
+            min_dist = d;
+            min_seg = atual->seg;
+        }
+        atual = atual->prox;
+    }
+    return min_seg;
 }
 
 Poligono CriarPoligono(int n) {
-    TPoligono *p = malloc(sizeof(TPoligono));
-    if (!p) return NULL;
-    p->cap = n; p->n = 0;
-    p->S = malloc(sizeof(TSegmento) * n);
+    TPoligonoInternal *p = malloc(sizeof(TPoligonoInternal));
+    p->cap = n + 4;
+    p->n = 0;
+    p->S = malloc(sizeof(TSegmentoInternal) * p->cap);
     return (Poligono)p;
 }
 
 void DestruirPoligono(Poligono P) {
     if (!P) return;
-    TPoligono *p = (TPoligono*)P;
+    TPoligonoInternal *p = (TPoligonoInternal*)P;
     if (p->S) free(p->S);
     free(p);
 }
 
 Ponto CriarPonto(double x, double y) {
-    TPonto *p = malloc(sizeof(TPonto));
-    if (!p) return NULL;
+    TPontoInternal *p = malloc(sizeof(TPontoInternal));
     p->x = x; p->y = y;
     return (Ponto)p;
 }
 
 Segmento CriarSegmento(Ponto a, Ponto b) {
-    TSegmento *s = malloc(sizeof(TSegmento));
-    if (!s) return NULL;
-    if (a) s->a = *(TPonto*)a;
-    if (b) s->b = *(TPonto*)b;
+    TSegmentoInternal *s = malloc(sizeof(TSegmentoInternal));
+    if (a) s->a = *(TPontoInternal*)a;
+    if (b) s->b = *(TPontoInternal*)b;
+    s->id = -1;
     return (Segmento)s;
 }
 
 void PoligonoAdicionarSegmento(Poligono P, Segmento S) {
-    TPoligono *p = (TPoligono*)P;
-    TSegmento *seg = (TSegmento*)S;
-    if (p && seg && p->n < p->cap) p->S[p->n++] = *seg;
-}
-
-static void VisAddPonto(TVisibilidade *v, TPonto p) {
-    if (v->n == v->cap) {
-        v->cap = (v->cap == 0) ? 16 : v->cap * 2;
-        v->pontos = realloc(v->pontos, v->cap * sizeof(TPonto));
+    TPoligonoInternal *p = (TPoligonoInternal*)P;
+    TSegmentoInternal *seg = (TSegmentoInternal*)S;
+    if (p->n >= p->cap) {
+        p->cap *= 2;
+        p->S = realloc(p->S, sizeof(TSegmentoInternal) * p->cap);
     }
-    v->pontos[v->n++] = p;
-}
-
-static int compararEventos(const EventoVarredura a, const EventoVarredura b) {
-    if (a.ang < b.ang) return -1;
-    if (a.ang > b.ang) return 1;
-    if (a.tipo != b.tipo) {
-        return (a.tipo == TIPO_INICIO) ? -1 : 1; 
-    }
-    return 0;
-}
-
-static void insertionSort(EventoVarredura *arr, int l, int r) {
-    for (int i = l + 1; i <= r; i++) {
-        EventoVarredura chave = arr[i];
-        int j = i - 1;
-        while (j >= l && compararEventos(arr[j], chave) > 0) {
-            arr[j + 1] = arr[j];
-            j--;
-        }
-        arr[j + 1] = chave;
-    }
-}
-
-static void merge(EventoVarredura *arr, EventoVarredura *temp, int l, int m, int r) {
-    int i = l, j = m + 1, k = l;
-    while (i <= m && j <= r) {
-        if (compararEventos(arr[i], arr[j]) <= 0) temp[k++] = arr[i++];
-        else temp[k++] = arr[j++];
-    }
-    while (i <= m) temp[k++] = arr[i++];
-    while (j <= r) temp[k++] = arr[j++];
-    for (i = l; i <= r; i++) arr[i] = temp[i];
-}
-
-static void mergeSortHibrido(EventoVarredura *arr, EventoVarredura *temp, int l, int r) {
-    if (r - l + 1 <= LIMIAR_INSERTION_SORT) {
-        insertionSort(arr, l, r);
-        return;
-    }
-    if (l < r) {
-        int m = l + (r - l) / 2;
-        mergeSortHibrido(arr, temp, l, m);
-        mergeSortHibrido(arr, temp, m + 1, r);
-        merge(arr, temp, l, m, r);
-    }
-}
-
-typedef struct {
-    TSegmento raio;
-    double min_t;
-    int found;
-} BuscaCtx;
-
-static void check_intersection(void* data, void* ctx) {
-    TSegmento* seg = (TSegmento*)data;
-    BuscaCtx* bc = (BuscaCtx*)ctx;
-    
-    double t = ObterT(bc->raio, *seg);
-    if (t > 1e-9) {
-        if (bc->found == 0 || t < bc->min_t) {
-            bc->min_t = t;
-            bc->found = 1;
-        }
-    }
+    p->S[p->n++] = *seg;
 }
 
 Visibilidade CalcularVisibilidade(Poligono P, Ponto X) {
-    TPoligono *poly = (TPoligono*)P;
-    TPonto origem = *(TPonto*)X;
-
-    if (!poly || poly->n == 0) return NULL;
-
-    TVisibilidade *vis = malloc(sizeof(TVisibilidade));
-    vis->n = 0; vis->cap = 0; vis->pontos = NULL;
-
-    int N = poly->n;
-    int numEventos = 2 * N;
-    EventoVarredura *eventos = malloc(sizeof(EventoVarredura) * numEventos);
-
-    for (int i = 0; i < N; i++) {
-        TSegmento *sPtr = &poly->S[i];
-        TSegmento s = *sPtr;
+    TPoligonoInternal *poly = (TPoligonoInternal*)P;
+    TPontoInternal origem = *(TPontoInternal*)X;
+    
+    int qtd_segs_orig = poly->n;
+    TSegmentoInternal *segs_proc = malloc(sizeof(TSegmentoInternal) * (qtd_segs_orig + 4) * 2);
+    int n_segs = 0;
+    
+    for (int i=0; i<qtd_segs_orig; i++) {
+        TSegmentoInternal s = poly->S[i];
+        double a1 = ponto_angulo(origem, s.a);
+        double a2 = ponto_angulo(origem, s.b);
         
-        double ang1 = atan2(s.a.y - origem.y, s.a.x - origem.x);
-        double ang2 = atan2(s.b.y - origem.y, s.b.x - origem.x);
-        
-        TPonto pMenor = s.a, pMaior = s.b;
-        double angMenor = ang1, angMaior = ang2;
-
-        if (ang1 > ang2) {
-            pMenor = s.b; angMenor = ang2;
-            pMaior = s.a; angMaior = ang1;
+        if ((a1 < EPSILON && a2 > M_PI) || (a2 < EPSILON && a1 > M_PI)) {
+            TPontoInternal dir = {origem.x + 10, origem.y};
+            TPontoInternal inter;
+            if (intersecao_raio_seg(origem, dir, &s, &inter)) {
+                segs_proc[n_segs++] = (TSegmentoInternal){s.a, inter, s.id};
+                segs_proc[n_segs++] = (TSegmentoInternal){inter, s.b, s.id};
+                continue;
+            }
         }
-
-        int idx1 = 2*i;
-        int idx2 = 2*i+1;
-
-        if (fabs(ang1 - ang2) > M_PI) {
-            eventos[idx1].v = pMenor;
-            eventos[idx1].ang = angMenor;
-            eventos[idx1].tipo = TIPO_FIM;
-            eventos[idx1].seg = sPtr;
-            eventos[idx1].dist_key = dist2(origem, pMenor);
-
-            eventos[idx2].v = pMaior;
-            eventos[idx2].ang = angMaior;
-            eventos[idx2].tipo = TIPO_INICIO;
-            eventos[idx2].seg = sPtr;
-            eventos[idx2].dist_key = dist2(origem, pMaior);
+        segs_proc[n_segs++] = s;
+    }
+    
+    int n_eventos = n_segs * 2;
+    Evento *eventos = malloc(sizeof(Evento) * n_eventos);
+    int idx_ev = 0;
+    
+    for (int i=0; i<n_segs; i++) {
+        TSegmentoInternal *s = &segs_proc[i];
+        double ang1 = ponto_angulo(origem, s->a);
+        double ang2 = ponto_angulo(origem, s->b);
+        double d1 = ponto_dist(origem, s->a);
+        double d2 = ponto_dist(origem, s->b);
+        
+        if (ang1 < ang2) {
+            eventos[idx_ev++] = (Evento){s->a, ang1, d1, EVENTO_INICIO, s};
+            eventos[idx_ev++] = (Evento){s->b, ang2, d2, EVENTO_FIM, s};
         } else {
-            eventos[idx1].v = pMenor;
-            eventos[idx1].ang = angMenor;
-            eventos[idx1].tipo = TIPO_INICIO;
-            eventos[idx1].seg = sPtr;
-            eventos[idx1].dist_key = dist2(origem, pMenor);
-
-            eventos[idx2].v = pMaior;
-            eventos[idx2].ang = angMaior;
-            eventos[idx2].tipo = TIPO_FIM;
-            eventos[idx2].seg = sPtr;
-            eventos[idx2].dist_key = dist2(origem, pMenor); 
+            eventos[idx_ev++] = (Evento){s->b, ang2, d2, EVENTO_INICIO, s};
+            eventos[idx_ev++] = (Evento){s->a, ang1, d1, EVENTO_FIM, s};
         }
     }
-
-    EventoVarredura *temp = malloc(sizeof(EventoVarredura) * numEventos);
-    if (temp) {
-        mergeSortHibrido(eventos, temp, 0, numEventos - 1);
-        free(temp);
+    
+    qsort(eventos, idx_ev, sizeof(Evento), comparar_eventos);
+    
+    NoAtivo *ativos = NULL;
+    for (int i=0; i<n_segs; i++) {
+        TSegmentoInternal *s = &segs_proc[i];
+        if (distancia_raio_segmento(origem, 0.0, s) < DBL_MAX) {
+            lista_ativos_inserir(&ativos, s);
+        }
     }
-
-    TreeNode raiz = NULL;
-    iniciar_tree(&raiz);
-
-    for (int i = 0; i < N; i++) {
-        TSegmento *sPtr = &poly->S[i];
-        TSegmento s = *sPtr;
-        double ang1 = atan2(s.a.y - origem.y, s.a.x - origem.x);
-        double ang2 = atan2(s.b.y - origem.y, s.b.x - origem.x);
+    
+    TVisibilidadeInternal *vis = malloc(sizeof(TVisibilidadeInternal));
+    vis->n = 0; vis->cap = 16;
+    vis->pontos = malloc(sizeof(TPontoInternal) * vis->cap);
+    
+    TSegmentoInternal *biombo = obter_mais_proximo(ativos, origem, 0.0);
+    TPontoInternal ultimo_ponto = {0,0};
+    int tem_ultimo = 0;
+    
+    if (biombo) {
+        TPontoInternal dir = {origem.x + 1000, origem.y};
+        TPontoInternal inter;
+        if (intersecao_raio_seg(origem, dir, biombo, &inter)) {
+            vis->pontos[vis->n++] = inter;
+            ultimo_ponto = inter;
+            tem_ultimo = 1;
+        }
+    }
+    
+    for (int i=0; i<idx_ev; i++) {
+        Evento ev = eventos[i];
         
-        if (fabs(ang1 - ang2) > M_PI) {
-            TPonto pMenor = (ang1 < ang2) ? s.a : s.b;
-            double distKey = dist2(origem, pMenor);
-            inserir_tree(&raiz, distKey, sPtr);
-        }
-    }
-
-    TPonto biombo = eventos[0].v;
-
-    for (int i = 0; i < numEventos; i++) {
-        EventoVarredura ev = eventos[i];
-        
-        if (ev.tipo == TIPO_INICIO) {
-            inserir_tree(&raiz, ev.dist_key, ev.seg);
-        } else {
-            remover_tree(&raiz, ev.dist_key, ev.seg);
-        }
-
-        BuscaCtx ctx;
-        ctx.raio.a = origem;
-        ctx.raio.b = ev.v;
-        ctx.min_t = 1.0;
-        ctx.found = 0;
-
-        tree_iterar(raiz, check_intersection, &ctx);
-
-        if (ctx.found && ctx.min_t < 0.999999999) {
-            TPonto inter;
-            inter.x = origem.x + ctx.min_t * (ev.v.x - origem.x);
-            inter.y = origem.y + ctx.min_t * (ev.v.y - origem.y);
+        if (ev.tipo == EVENTO_INICIO) {
+            lista_ativos_inserir(&ativos, ev.segmento);
+            TSegmentoInternal *novo_biombo = obter_mais_proximo(ativos, origem, ev.angulo);
             
-            VisibilidadeGetPonto(vis, 0); 
-            VisAddPonto(vis, biombo); 
-            VisAddPonto(vis, inter); 
-            biombo = inter;
+            if (novo_biombo == ev.segmento && biombo != ev.segmento) {
+                if (biombo && tem_ultimo) {
+                    TPontoInternal inter;
+                    if (intersecao_raio_seg(origem, ev.ponto, biombo, &inter)) {
+                        if (!ponto_igual(ultimo_ponto, inter)) {
+                            if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
+                            vis->pontos[vis->n++] = inter;
+                            ultimo_ponto = inter;
+                        }
+                    }
+                }
+                if (!tem_ultimo || !ponto_igual(ultimo_ponto, ev.ponto)) {
+                    if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
+                    vis->pontos[vis->n++] = ev.ponto;
+                    ultimo_ponto = ev.ponto;
+                    tem_ultimo = 1;
+                }
+                biombo = novo_biombo;
+            }
         } else {
-            VisAddPonto(vis, biombo); 
-            VisAddPonto(vis, ev.v); 
-            biombo = ev.v;
+            if (ev.segmento == biombo) {
+                if (!tem_ultimo || !ponto_igual(ultimo_ponto, ev.ponto)) {
+                    if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
+                    vis->pontos[vis->n++] = ev.ponto;
+                    ultimo_ponto = ev.ponto;
+                    tem_ultimo = 1;
+                }
+                lista_ativos_remover(&ativos, ev.segmento);
+                TSegmentoInternal *novo_biombo = obter_mais_proximo(ativos, origem, ev.angulo);
+                
+                if (novo_biombo) {
+                    TPontoInternal inter;
+                    if (intersecao_raio_seg(origem, ev.ponto, novo_biombo, &inter)) {
+                        if (!tem_ultimo || !ponto_igual(ultimo_ponto, inter)) {
+                            if (vis->n == vis->cap) { vis->cap *= 2; vis->pontos = realloc(vis->pontos, sizeof(TPontoInternal)*vis->cap); }
+                            vis->pontos[vis->n++] = inter;
+                            ultimo_ponto = inter;
+                            tem_ultimo = 1;
+                        }
+                    }
+                }
+                biombo = novo_biombo;
+            } else {
+                lista_ativos_remover(&ativos, ev.segmento);
+            }
         }
     }
-
-    liberar_tree(&raiz); 
+    
+    while(ativos) {
+        NoAtivo *t = ativos;
+        ativos = ativos->prox;
+        free(t);
+    }
+    free(segs_proc);
     free(eventos);
+    
     return (Visibilidade)vis;
 }
 
 int VisibilidadeNumPontos(Visibilidade VV) {
     if (!VV) return 0;
-    return ((TVisibilidade*)VV)->n;
+    return ((TVisibilidadeInternal*)VV)->n;
 }
 
 Ponto VisibilidadeGetPonto(Visibilidade VV, int i) {
-    TVisibilidade *v = (TVisibilidade*)VV;
+    TVisibilidadeInternal *v = (TVisibilidadeInternal*)VV;
     if (!v || i < 0 || i >= v->n) return NULL;
     return CriarPonto(v->pontos[i].x, v->pontos[i].y);
 }
 
-double PontoX(Ponto P) { return P ? ((TPonto*)P)->x : 0.0; }
-double PontoY(Ponto P) { return P ? ((TPonto*)P)->y : 0.0; }
+double PontoX(Ponto P) { return P ? ((TPontoInternal*)P)->x : 0.0; }
+double PontoY(Ponto P) { return P ? ((TPontoInternal*)P)->y : 0.0; }
 
 void DestruirVisibilidade(Visibilidade V) {
     if (!V) return;
-    TVisibilidade *v = (TVisibilidade*)V;
+    TVisibilidadeInternal *v = (TVisibilidadeInternal*)V;
     if (v->pontos) free(v->pontos);
     free(v);
+}
+
+void definir_limiar_ordenacao(int limiar) {
+    (void)limiar;
 }

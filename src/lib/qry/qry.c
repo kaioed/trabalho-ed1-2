@@ -19,7 +19,8 @@ typedef struct {
     bool foi_destruida;
     bool foi_clonada;
     float x_centro, y_centro; 
-    int id_disparador_origem;
+    int id_pai;
+    bool eh_anteparo; 
 } FormaStruct;
 
 static int proximo_id_clone = 20000;
@@ -41,27 +42,24 @@ void desenhar_cenario_atual(FILE* svg, Lista lista_formas) {
     while (p) {
         FormaStruct* f = (FormaStruct*) get_valor_lista(lista_formas, p);
         if (!f->foi_destruida) {
-             // ALTERADO: 
-             // fill-opacity='0.5': Cores mais vivas (50%) mas ainda transparentes.
-             // stroke-opacity='1.0': Bordas totalmente sólidas para definição.
              switch(f->tipo) {
                 case TIPO_CIRCULO: {
                     Circulo c = (Circulo)f->dados_forma;
-                    fprintf(svg, "<circle id='%d' cx='%.2f' cy='%.2f' r='%.2f' stroke='%s' fill='%s' fill-opacity='0.5' stroke-opacity='1.0' />\n",
-                        f->id_original, get_x(c), get_y(c), get_raio(c), get_corBorda_circulo(c), get_corPreenchimento_circulo(c));
+                    fprintf(svg, "<circle cx='%.2f' cy='%.2f' r='%.2f' stroke='%s' fill='%s' fill-opacity='0.6' stroke-width='1' />\n",
+                        get_x(c), get_y(c), get_raio(c), get_corBorda_circulo(c), get_corPreenchimento_circulo(c));
                     break;
                 }
                 case TIPO_RETANGULO: {
                     Retangulo r = (Retangulo)f->dados_forma;
-                    fprintf(svg, "<rect id='%d' x='%.2f' y='%.2f' width='%.2f' height='%.2f' stroke='%s' fill='%s' fill-opacity='0.5' stroke-opacity='1.0' />\n",
-                        f->id_original, get_x_retangulo(r), get_y_retangulo(r), get_largura(r), get_altura(r),
+                    fprintf(svg, "<rect x='%.2f' y='%.2f' width='%.2f' height='%.2f' stroke='%s' fill='%s' fill-opacity='0.6' stroke-width='1' />\n",
+                        get_x_retangulo(r), get_y_retangulo(r), get_largura(r), get_altura(r),
                         get_corBorda_retangulo(r), get_corPreenchimento_retangulo(r));
                     break;
                 }
                 case TIPO_LINHA: {
                     Linha l = (Linha)f->dados_forma;
-                    fprintf(svg, "<line id='%d' x1='%.2f' y1='%.2f' x2='%.2f' y2='%.2f' stroke='%s' stroke-opacity='1.0' />\n",
-                        f->id_original, get_x1_linha(l), get_y1_linha(l), get_x2_linha(l), get_y2_linha(l), get_cor_linha(l));
+                    fprintf(svg, "<line x1='%.2f' y1='%.2f' x2='%.2f' y2='%.2f' stroke='%s' stroke-width='1' />\n",
+                        get_x1_linha(l), get_y1_linha(l), get_x2_linha(l), get_y2_linha(l), get_cor_linha(l));
                     break;
                 }
                 case TIPO_TEXTO: {
@@ -71,9 +69,8 @@ void desenhar_cenario_atual(FILE* svg, Lista lista_formas) {
                     if (a == 'm') strcpy(anchor_svg, "middle");
                     else if (a == 'f') strcpy(anchor_svg, "end");
 
-                    // Texto um pouco mais opaco (0.8) para legibilidade
-                    fprintf(svg, "<text id='%d' x='%.2f' y='%.2f' stroke='%s' fill='%s' fill-opacity='0.8' stroke-opacity='1.0' text-anchor='%s'>%s</text>\n",
-                        f->id_original, get_x_texto(t), get_y_texto(t), get_corBorda_texto(t), 
+                    fprintf(svg, "<text x='%.2f' y='%.2f' stroke='%s' fill='%s' text-anchor='%s'>%s</text>\n",
+                        get_x_texto(t), get_y_texto(t), get_corBorda_texto(t), 
                         get_corPreenchimento_texto(t), anchor_svg, get_conteudo_texto(t));
                     break;
                 }
@@ -87,28 +84,15 @@ double dist_sq(double x1, double y1, double x2, double y2) {
     return (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
 }
 
-// Função robusta que detecta interseção mesmo em casos colineares (sobreposição)
 bool segmentos_intersectam(double x1, double y1, double x2, double y2, 
                            double x3, double y3, double x4, double y4) {
     double den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
-    
-    if (fabs(den) < 1e-9) {
-         double cross = (x2-x1)*(y3-y1) - (y2-y1)*(x3-x1);
-         if (fabs(cross) > 1e-9) return false; 
-         
-         double minx1 = fmin(x1, x2), maxx1 = fmax(x1, x2);
-         double minx2 = fmin(x3, x4), maxx2 = fmax(x3, x4);
-         double miny1 = fmin(y1, y2), maxy1 = fmax(y1, y2);
-         double miny2 = fmin(y3, y4), maxy2 = fmax(y3, y4);
-
-         if (maxx1 >= minx2 && maxx2 >= minx1 && maxy1 >= miny2 && maxy2 >= miny1) return true;
-         return false;
-    }
+    if (fabs(den) < 1e-9) return false; 
 
     double t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / den;
     double u = -((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3)) / den;
 
-    return (t >= -1e-9 && t <= 1.0 + 1e-9 && u >= -1e-9 && u <= 1.0 + 1e-9);
+    return (t >= 0 && t <= 1 && u >= 0 && u <= 1);
 }
 
 double dist_sq_ponto_segmento(double px, double py, double ax, double ay, double bx, double by) {
@@ -150,9 +134,8 @@ void desenhar_visibilidade_svg(FILE *svg, Visibilidade vis, double x_bomb, doubl
         fprintf(svg, "%.2f,%.2f ", PontoX(p), PontoY(p));
         free(p);
     }
-    // Visibilidade em 0.5 para consistência
-    fprintf(svg, "\" style=\"fill:%s;fill-opacity:0.5;stroke:none\" />\n", cor);
-    fprintf(svg, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"3\" fill=\"red\" />\n", x_bomb, y_bomb);
+    fprintf(svg, "\" stroke=\"none\" fill=\"%s\" fill-opacity=\"0.3\" />\n", cor);
+    fprintf(svg, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"5\" fill=\"red\" stroke=\"black\" stroke-width=\"1\" />\n", x_bomb, y_bomb);
 }
 
 bool linha_visivel(Visibilidade vis, double x1, double y1, double x2, double y2) {
@@ -177,13 +160,6 @@ bool retangulo_visivel(Visibilidade vis, double rx, double ry, double w, double 
     }
 
     int n = VisibilidadeNumPontos(vis);
-    for(int i=0; i<n; i++) {
-        Ponto p = VisibilidadeGetPonto(vis, i);
-        double px = PontoX(p), py = PontoY(p);
-        free(p);
-        if (px >= rx && px <= rx+w && py >= ry && py <= ry+h) return true;
-    }
-
     for (int i = 0; i < n; i++) {
         Ponto pa = VisibilidadeGetPonto(vis, i);
         Ponto pb = VisibilidadeGetPonto(vis, (i + 1) % n);
@@ -367,7 +343,8 @@ FormaStruct *clonar_forma_struct(FormaStruct *original, float dx, float dy) {
     wrapper->foi_clonada = true;
     wrapper->x_centro = nx;
     wrapper->y_centro = ny;
-    wrapper->id_disparador_origem = -1;
+    wrapper->id_pai = original->eh_anteparo ? original->id_pai : original->id_original;
+    wrapper->eh_anteparo = original->eh_anteparo;
     
     return wrapper;
 }
@@ -466,6 +443,8 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             sscanf(args, "%d %d %s", &id_i, &id_f, orientacao);
             char or = (orientacao[0] == 'h' || orientacao[0] == 'H') ? 'h' : 'v';
 
+            if (txt) fprintf(txt, "a:\n");
+
             Lista novos_anteparos = NULL;
             iniciar_lista(&novos_anteparos);
 
@@ -475,7 +454,6 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                 
                 if (!f->foi_destruida && f->id_original >= id_i && f->id_original <= id_f) {
                     if (f->tipo == TIPO_CIRCULO || f->tipo == TIPO_RETANGULO || f->tipo == TIPO_TEXTO) {
-                        if (txt) fprintf(txt, "Transformado: %s ID %d\n", obter_nome_tipo(f->tipo), f->id_original);
                         f->foi_destruida = true;
                         
                         double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
@@ -497,8 +475,10 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                                 {x, y + h, x, y}        
                             };
 
+                            int ids[4];
                             for(int k=0; k<4; k++) {
                                 int novo_id = proximo_id_clone++;
+                                ids[k] = novo_id;
                                 Linha nl = criar_linha(coords[k][0], coords[k][1], coords[k][2], coords[k][3], cor, novo_id);
                                 FormaStruct* fw = malloc(sizeof(FormaStruct));
                                 fw->id_original = novo_id;
@@ -508,9 +488,11 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                                 fw->foi_clonada = false;
                                 fw->x_centro = (coords[k][0]+coords[k][2])/2;
                                 fw->y_centro = (coords[k][1]+coords[k][3])/2;
+                                fw->eh_anteparo = true;
+                                fw->id_pai = f->id_original;
                                 inserir_lista(&novos_anteparos, fw);
-                                if (txt) fprintf(txt, "Novo Segmento (Ret): ID %d (%.2f, %.2f) -> (%.2f, %.2f)\n", novo_id, coords[k][0], coords[k][1], coords[k][2], coords[k][3]);
                             }
+                            if (txt) fprintf(txt, "  %d (retangulo) -> %d, %d, %d, %d\n", f->id_original, ids[0], ids[1], ids[2], ids[3]);
                             gerou_multiplos = true;
                         }
                         else if (f->tipo == TIPO_CIRCULO) {
@@ -544,8 +526,10 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                             fw->foi_clonada = false;
                             fw->x_centro = (x1+x2)/2;
                             fw->y_centro = (y1+y2)/2;
+                            fw->eh_anteparo = true;
+                            fw->id_pai = f->id_original;
                             inserir_lista(&novos_anteparos, fw);
-                            if (txt) fprintf(txt, "Novo Segmento: ID %d (%.2f, %.2f) -> (%.2f, %.2f)\n", novo_id, x1, y1, x2, y2);
+                            if (txt) fprintf(txt, "  %d (%s) -> %d\n", f->id_original, obter_nome_tipo(f->tipo), novo_id);
                         }
                     }
                 }
@@ -568,11 +552,14 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
 
             if (strcmp(cmd, "d") == 0) {
                  sscanf(args, "%lf %lf %s", &x, &y, sfx);
+                 if (txt) fprintf(txt, "d: x=%.2f y=%.2f\n", x, y);
             } else if (strcmp(cmd, "p") == 0) {
                  sscanf(args, "%lf %lf %s %s", &x, &y, cor, sfx);
+                 if (txt) fprintf(txt, "p: x=%.2f y=%.2f cor=%s\n", x, y, cor);
             } else { 
                  sscanf(args, "%lf %lf %lf %lf %s", &x, &y, &dx, &dy, sfx);
                  sprintf(cor, "blue"); 
+                 if (txt) fprintf(txt, "cln: dx=%.2f dy=%.2f\n", dx, dy);
             }
 
             Poligono anteparos = CriarPoligono(2000);
@@ -581,7 +568,9 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
             Posic pa = get_primeiro_lista(lista_formas);
             while(pa){
                FormaStruct* f = (FormaStruct*)get_valor_lista(lista_formas, pa);
-               if(!f->foi_destruida) transformar_forma_em_segmentos(anteparos, f, 'v', NULL);
+               if(!f->foi_destruida && f->eh_anteparo) {
+                   transformar_forma_em_segmentos(anteparos, f, 'v', NULL);
+               }
                pa = get_proximo_lista(lista_formas, pa);
             }
             
@@ -601,29 +590,43 @@ void process_qry(FILE *qry, const char* dir_saida, const char* nome_base, void* 
                     
                     if (strcmp(cmd, "d") == 0) {
                         f->foi_destruida = true;
-                        if (txt) fprintf(txt, "Destruido: %s ID %d\n", obter_nome_tipo(f->tipo), f->id_original);
+                        if (txt) {
+                            if (f->eh_anteparo) {
+                                fprintf(txt, "  %d segmento (anteparo de %d)\n", f->id_original, f->id_pai);
+                            } else {
+                                fprintf(txt, "  %d %s\n", f->id_original, obter_nome_tipo(f->tipo));
+                            }
+                        }
                     } 
                     else if (strcmp(cmd, "p") == 0) {
-                         switch(f->tipo) {
-                            case TIPO_CIRCULO: 
-                                set_corBorda_circulo((Circulo)f->dados_forma, cor);
-                                set_corPreenchimento_circulo((Circulo)f->dados_forma, cor);
-                                break;
-                            case TIPO_RETANGULO:
-                                set_corBorda_retangulo((Retangulo)f->dados_forma, cor);
-                                set_corPreenchimento_retangulo((Retangulo)f->dados_forma, cor);
-                                break;
-                            case TIPO_LINHA:
-                            case TIPO_TEXTO:
-                                break;
-                        }
-                        if (txt) fprintf(txt, "Pintado: %s ID %d\n", obter_nome_tipo(f->tipo), f->id_original);
+                         if (!f->eh_anteparo) {
+                             switch(f->tipo) {
+                                case TIPO_CIRCULO: 
+                                    set_corBorda_circulo((Circulo)f->dados_forma, cor);
+                                    set_corPreenchimento_circulo((Circulo)f->dados_forma, cor);
+                                    break;
+                                case TIPO_RETANGULO:
+                                    set_corBorda_retangulo((Retangulo)f->dados_forma, cor);
+                                    set_corPreenchimento_retangulo((Retangulo)f->dados_forma, cor);
+                                    break;
+                                case TIPO_LINHA:
+                                case TIPO_TEXTO:
+                                    break;
+                            }
+                            if (txt) fprintf(txt, "  %d %s\n", f->id_original, obter_nome_tipo(f->tipo));
+                         }
                     }
                     else if (strcmp(cmd, "cln") == 0) {
                         FormaStruct* clone = clonar_forma_struct(f, (float)dx, (float)dy);
                         if (clone) {
                             inserir_lista(&novos_clones, clone);
-                            if (txt) fprintf(txt, "Clonado: %s ID %d -> %d\n", obter_nome_tipo(f->tipo), f->id_original, clone->id_original);
+                            if (txt) {
+                                if (clone->eh_anteparo) {
+                                    fprintf(txt, "  %d segmento (clone de %d)\n", clone->id_original, clone->id_pai);
+                                } else {
+                                    fprintf(txt, "  %d %s (clone)\n", clone->id_original, obter_nome_tipo(clone->tipo));
+                                }
+                            }
                         }
                     }
                 }
